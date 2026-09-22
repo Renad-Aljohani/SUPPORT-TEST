@@ -1,0 +1,24 @@
+<odoo>
+
+    <record id="support_category_inquiry" model="support.category">
+        <field name="name">استفسار</field>
+    </record>
+
+    <record id="support_category_technical" model="support.category">
+        <field name="name">مشكلة تقنية</field>
+    </record>
+
+    <record id="support_category_service" model="support.category">
+        <field name="name">طلب خدمة</field>
+    </record>
+
+    <record id="support_category_requirements" model="support.category">
+        <field name="name">جمع متطلبات</field>
+    </record>
+
+    <record id="support_category_maintenance" model="support.category">
+        <field name="name">صيانة</field>
+        <field name="active">False</field>
+    </record>
+
+</odoo>

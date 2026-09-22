@@ -1,0 +1,3376 @@
+/* =========================================================
+   منصة الدعم الفني — الطبقة المشتركة (CORE)
+   معهد البحوث والدراسات الاستشارية
+
+   كل ما في هذا الجزء مطابق حرفيًا بين employee.css و support.css.
+   وُلِّد الملفان من نفس المصدر، فأي فرق بينهما هو خطأ.
+
+   المرجع: «دليل الهوية البصرية لمعهد البحوث والدراسات الاستشارية»
+     الألوان الأساسية : #208db0 · #b9995a · #123453
+     الألوان الفرعية  : #a6a6a6 · #737373 · #545454 · #f1eee3 · #ceb66e
+     الخط (عربي/إنجليزي): Readex Pro — عادي وعريض
+
+   النطاق: كل قاعدة محصورة داخل :is(#topbar, #app, #toast, .portal-entry)
+   أو داخل body.iu-portal، حتى لا تتسرب إلى هيدر Odoo أو بقية الموقع.
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   0. الخط — مستضاف داخل الموديول، بلا أي اعتماد خارجي
+
+   Readex Pro هو خط الهوية للعربية والإنجليزية معًا (دليل الهوية ٣.١ و٣.٢).
+   رخصته OFL، فيجوز استضافته داخل المشروع.
+
+   خطوة واحدة مطلوبة منك:
+     نزّلي العائلة من Google Fonts، وضعي الملفات الأربعة في
+     website/static/src/fonts/  بهذه الأسماء بالضبط:
+       ReadexPro-Regular   ReadexPro-Medium
+       ReadexPro-SemiBold  ReadexPro-Bold
+     صيغة woff2 أفضل، وtff تعمل كما هي دون تحويل.
+
+   وبعدها احذفي وسم <link> الخاص بالخط من قالب QWeb — لم يعد له داعٍ.
+   وإلى أن تفعلي ذلك تعمل الواجهة بخط Tajawal الذي يحمّله قالبك الآن،
+   ولا ينكسر أي تخطيط.
+--------------------------------------------------------- */
+@font-face {
+  font-family: "Readex Pro";
+  src: url("/website/static/src/fonts/ReadexPro-Regular.woff2") format("woff2"),
+       url("/website/static/src/fonts/ReadexPro-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Readex Pro";
+  src: url("/website/static/src/fonts/ReadexPro-Medium.woff2") format("woff2"),
+       url("/website/static/src/fonts/ReadexPro-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Readex Pro";
+  src: url("/website/static/src/fonts/ReadexPro-SemiBold.woff2") format("woff2"),
+       url("/website/static/src/fonts/ReadexPro-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Readex Pro";
+  src: url("/website/static/src/fonts/ReadexPro-Bold.woff2") format("woff2"),
+       url("/website/static/src/fonts/ReadexPro-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------
+   1. الرموز (Design tokens)
+--------------------------------------------------------- */
+:root {
+  /* ألوان الهوية كما وردت في الدليل */
+  --iu-navy: #123453;
+  --iu-teal: #208db0;
+  --iu-gold: #b9995a;
+  --iu-gold-light: #ceb66e;
+  --iu-cream: #f1eee3;
+  --iu-grey-1: #a6a6a6;
+  --iu-grey-2: #737373;
+  --iu-grey-3: #545454;
+
+  /* اشتقاقات محسوبة للاستخدام في الواجهة */
+  --navy-deep: #0d2942;
+  --navy-tint: #e7edf3;
+  --navy-soft: #f2f5f8;
+  --teal-ink: #176d89;
+  --teal-tint: #e6f2f6;
+  --gold-ink: #7d6430;
+  --gold-tint: #f8f3e8;
+  --gold-line: #e5dcc6;
+
+  /* أسطح ونصوص */
+  --bg: var(--iu-cream);
+  /* لا أبيض صريح في أي سطح: الأسطح مشتقة من كريم الهوية #f1eee3
+     بدرجات أفتح، فالعين ترتاح ويبقى الفرق بين الصفحة والبطاقة واضحًا */
+  /* الكروت والحقول بيضاء، والكريمي أرضيةُ الصفحة وحدها.
+     الأشرطة الداخلية (ترويسة الجدول، شريط المراحل، جسم المحادثة)
+     بلمسة كحلية باهتة جدًا — لا بيج. */
+  --white: #ffffff;
+  --field: #ffffff;
+  --head-bg: #f3f6f9;
+  --row-hover: #f7f9fb;
+  --ink: #1c2b3a;
+  --ink-2: #3a4653;
+  --muted: #5f6b78;
+  --muted-2: var(--iu-grey-2);
+  --line: #e4e7ec;
+  --line-strong: #cbd2db;
+
+  /* حالات الطلب */
+  --state-new: var(--teal-ink);
+  --state-new-bg: var(--teal-tint);
+  --state-processing: var(--gold-ink);
+  --state-processing-bg: var(--gold-tint);
+  --state-confirmation: var(--iu-navy);
+  --state-confirmation-bg: var(--navy-tint);
+  --success: #146c4a;
+  --success-bg: #e7f4ee;
+  --danger: #a23b3b;
+  --danger-bg: #fbeded;
+  --danger-line: #e6c4c2;
+  --warning: var(--gold-ink);
+  --warning-bg: var(--gold-tint);
+
+  /* أنصاف أقطار */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* ارتفاعات موحّدة لكل عنصر تحكم */
+  --h-sm: 36px;
+  --h-md: 44px;
+  --h-lg: 48px;
+  --control-height: var(--h-md);
+
+  /* مقاس واحد للمسافات، مضاعفات 4 */
+  --gap-1: 4px;
+  --gap-2: 8px;
+  --gap-3: 12px;
+  --gap-4: 16px;
+  --gap-5: 20px;
+  --gap-6: 24px;
+  --gap-7: 32px;
+  --gap-8: 40px;
+
+  /* عرض منطقة المحتوى — رقم واحد لكل الصفحات */
+  --shell: 1200px;
+  --shell-gutter: 48px;
+  --topbar-h: 72px;
+
+  /* ظلال خفيفة فقط */
+  /* ظلّ واحد خافت للكروت؛ الفصل يأتي من الأرضية الكريمية لا من الظل.
+     sh-3 وحده أعمق لأنه للّوحات الطافية فوق الصفحة. */
+  --sh-1: 0 1px 2px rgba(18, 52, 83, .04);
+  --sh-2: 0 1px 3px rgba(18, 52, 83, .05);
+  --sh-3: 0 10px 28px -14px rgba(18, 52, 83, .2), 0 1px 3px rgba(18, 52, 83, .05);
+
+
+  /* باترن الهوية مقصور على الشريط العلوي وحده — نسيج خفيف على الكحلي،
+     ولا يقع خلف أي نص تقرأينه. مقاسه وحده هنا، وقوّته داخل #topbar::before. */
+  --pattern: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2796%27%20height%3D%2796%27%20viewBox%3D%270%200%2096%2096%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23b9995a%27%20stroke-width%3D%271.4%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M78.00%2C48.00%2069.21%2C56.79%2069.21%2C69.21%2056.79%2C69.21%2048.00%2C78.00%2039.21%2C69.21%2026.79%2C69.21%2026.79%2C56.79%2018.00%2C48.00%2026.79%2C39.21%2026.79%2C26.79%2039.21%2C26.79%2048.00%2C18.00%2056.79%2C26.79%2069.21%2C26.79%2069.21%2C39.21Z%27%2F%3E%3Cpath%20d%3D%27M30.00%2C0.00%2021.21%2C8.79%2021.21%2C21.21%208.79%2C21.21%200.00%2C30.00%20-8.79%2C21.21%20-21.21%2C21.21%20-21.21%2C8.79%20-30.00%2C0.00%20-21.21%2C-8.79%20-21.21%2C-21.21%20-8.79%2C-21.21%20-0.00%2C-30.00%208.79%2C-21.21%2021.21%2C-21.21%2021.21%2C-8.79Z%27%2F%3E%3Cpath%20d%3D%27M126.00%2C0.00%20117.21%2C8.79%20117.21%2C21.21%20104.79%2C21.21%2096.00%2C30.00%2087.21%2C21.21%2074.79%2C21.21%2074.79%2C8.79%2066.00%2C0.00%2074.79%2C-8.79%2074.79%2C-21.21%2087.21%2C-21.21%2096.00%2C-30.00%20104.79%2C-21.21%20117.21%2C-21.21%20117.21%2C-8.79Z%27%2F%3E%3Cpath%20d%3D%27M30.00%2C96.00%2021.21%2C104.79%2021.21%2C117.21%208.79%2C117.21%200.00%2C126.00%20-8.79%2C117.21%20-21.21%2C117.21%20-21.21%2C104.79%20-30.00%2C96.00%20-21.21%2C87.21%20-21.21%2C74.79%20-8.79%2C74.79%20-0.00%2C66.00%208.79%2C74.79%2021.21%2C74.79%2021.21%2C87.21Z%27%2F%3E%3Cpath%20d%3D%27M126.00%2C96.00%20117.21%2C104.79%20117.21%2C117.21%20104.79%2C117.21%2096.00%2C126.00%2087.21%2C117.21%2074.79%2C117.21%2074.79%2C104.79%2066.00%2C96.00%2074.79%2C87.21%2074.79%2C74.79%2087.21%2C74.79%2096.00%2C66.00%20104.79%2C74.79%20117.21%2C74.79%20117.21%2C87.21Z%27%2F%3E%3Cpath%20d%3D%27M60.60%2C48.00%2056.91%2C51.69%2056.91%2C56.91%2051.69%2C56.91%2048.00%2C60.60%2044.31%2C56.91%2039.09%2C56.91%2039.09%2C51.69%2035.40%2C48.00%2039.09%2C44.31%2039.09%2C39.09%2044.31%2C39.09%2048.00%2C35.40%2051.69%2C39.09%2056.91%2C39.09%2056.91%2C44.31Z%27%20fill%3D%27%23b9995a%27%20stroke%3D%27none%27%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --pattern-size: 96px;
+  --pattern-strength: .08;
+  --font: "Readex Pro", "Tajawal", "Segoe UI", system-ui, sans-serif;
+  --ease: cubic-bezier(.32, .72, .38, 1);
+}
+
+/* ---------------------------------------------------------
+   2. الأساس — محصور في صفحات المنصة وحدها
+--------------------------------------------------------- */
+body.iu-portal {
+  margin: 0;
+  min-width: 320px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* website.layout يلفّ المحتوى في #wrap وقد يعطيه خلفية بيضاء */
+/* :has يجعل الأرضية تنطبق على صفحات المنصة وحدها دون انتظار JS،
+   وقاعدة body.iu-portal تبقى للمتصفحات الأقدم. */
+#wrap:has(> #app.page-shell),
+#wrap:has(#app.page-shell),
+body.iu-portal #wrap {
+  background: var(--bg);
+}
+
+:is(#topbar, #app, #toast, .portal-entry) {
+  font-family: var(--font);
+  color: var(--ink);
+}
+
+:is(#topbar, #app, #toast, .portal-entry) *,
+:is(#topbar, #app, #toast, .portal-entry) *::before,
+:is(#topbar, #app, #toast, .portal-entry) *::after {
+  box-sizing: border-box;
+}
+
+:is(#topbar, #app, #toast, .portal-entry) :is(button, input, select, textarea) {
+  font: inherit;
+  color: inherit;
+}
+
+:is(#topbar, #app, #toast, .portal-entry) :is(button, a) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:is(#topbar, #app, #toast, .portal-entry) a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:is(#topbar, #app, #toast, .portal-entry) button {
+  cursor: pointer;
+}
+
+:is(#topbar, #app, #toast, .portal-entry) [hidden] {
+  display: none !important;
+}
+
+:is(#topbar, #app, #toast, .portal-entry) ::selection {
+  background: var(--teal-tint);
+  color: var(--navy-deep);
+}
+
+/* سُلّم عناوين واحد: 700 للعناوين، 600 للعناوين الفرعية، لا 800 */
+:is(#topbar, #app, .portal-entry) :is(h1, h2, h3) {
+  margin: 0;
+  color: var(--navy-deep);
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+
+:is(#app, .portal-entry) p {
+  margin: 0;
+}
+
+/* التركيز ظاهر في كل مكان — كان مُلغى في الملف السابق */
+:is(#topbar, #app, #toast, .portal-entry) :focus-visible {
+  outline: 2px solid var(--iu-teal);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------------------------------------------------------
+   3. الهيدر
+   شريط كحلي بلون الهوية الأساسي، عليه الشعار الأبيض كما يعرضه
+   دليل الهوية تمامًا، وطبقة باترن خفيفة، وخط ذهبي يفصله عن الصفحة.
+   التبويب النشط عليه مؤشر أبيض ملاصق للخط الذهبي.
+--------------------------------------------------------- */
+#topbar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 30;
+  isolation: isolate;
+  border-bottom: 3px solid var(--iu-gold);
+  background: var(--iu-navy);
+  color: #fff;
+}
+
+/* نسيج الهوية داخل الشريط — احذفي هذه القاعدة وحدها ليصبح الشريط سادة */
+#topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2796%27%20height%3D%2796%27%20viewBox%3D%270%200%2096%2096%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27%23ffffff%27%20stroke-width%3D%271.4%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M78.00%2C48.00%2069.21%2C56.79%2069.21%2C69.21%2056.79%2C69.21%2048.00%2C78.00%2039.21%2C69.21%2026.79%2C69.21%2026.79%2C56.79%2018.00%2C48.00%2026.79%2C39.21%2026.79%2C26.79%2039.21%2C26.79%2048.00%2C18.00%2056.79%2C26.79%2069.21%2C26.79%2069.21%2C39.21Z%27%2F%3E%3Cpath%20d%3D%27M30.00%2C0.00%2021.21%2C8.79%2021.21%2C21.21%208.79%2C21.21%200.00%2C30.00%20-8.79%2C21.21%20-21.21%2C21.21%20-21.21%2C8.79%20-30.00%2C0.00%20-21.21%2C-8.79%20-21.21%2C-21.21%20-8.79%2C-21.21%20-0.00%2C-30.00%208.79%2C-21.21%2021.21%2C-21.21%2021.21%2C-8.79Z%27%2F%3E%3Cpath%20d%3D%27M126.00%2C0.00%20117.21%2C8.79%20117.21%2C21.21%20104.79%2C21.21%2096.00%2C30.00%2087.21%2C21.21%2074.79%2C21.21%2074.79%2C8.79%2066.00%2C0.00%2074.79%2C-8.79%2074.79%2C-21.21%2087.21%2C-21.21%2096.00%2C-30.00%20104.79%2C-21.21%20117.21%2C-21.21%20117.21%2C-8.79Z%27%2F%3E%3Cpath%20d%3D%27M30.00%2C96.00%2021.21%2C104.79%2021.21%2C117.21%208.79%2C117.21%200.00%2C126.00%20-8.79%2C117.21%20-21.21%2C117.21%20-21.21%2C104.79%20-30.00%2C96.00%20-21.21%2C87.21%20-21.21%2C74.79%20-8.79%2C74.79%20-0.00%2C66.00%208.79%2C74.79%2021.21%2C74.79%2021.21%2C87.21Z%27%2F%3E%3Cpath%20d%3D%27M126.00%2C96.00%20117.21%2C104.79%20117.21%2C117.21%20104.79%2C117.21%2096.00%2C126.00%2087.21%2C117.21%2074.79%2C117.21%2074.79%2C104.79%2066.00%2C96.00%2074.79%2C87.21%2074.79%2C74.79%2087.21%2C74.79%2096.00%2C66.00%20104.79%2C74.79%20117.21%2C74.79%20117.21%2C87.21Z%27%2F%3E%3Cpath%20d%3D%27M60.60%2C48.00%2056.91%2C51.69%2056.91%2C56.91%2051.69%2C56.91%2048.00%2C60.60%2044.31%2C56.91%2039.09%2C56.91%2039.09%2C51.69%2035.40%2C48.00%2039.09%2C44.31%2039.09%2C39.09%2044.31%2C39.09%2048.00%2C35.40%2051.69%2C39.09%2056.91%2C39.09%2056.91%2C44.31Z%27%20fill%3D%27%23ffffff%27%20stroke%3D%27none%27%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  background-size: var(--pattern-size);
+  opacity: .09;
+  pointer-events: none;
+}
+
+#topbar .topbar-inner {
+  width: min(var(--shell), calc(100% - var(--shell-gutter)));
+  min-height: var(--topbar-h);
+  margin-inline: auto;
+
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--gap-5);
+}
+
+
+/* الشعار */
+#topbar .brand {
+  justify-self: start;
+  align-self: center;
+
+  display: inline-flex;
+  align-items: center;
+
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+
+  color: #fff;
+}
+
+#topbar .brand:hover {
+  background: transparent;
+}
+
+
+/* الشعار فقط بدون النص */
+#topbar .brand-logo {
+  width: auto;
+  height: 58px;
+  max-width: 220px;
+
+  display: block;
+  object-fit: contain;
+  background: transparent;
+}
+
+#topbar .brand-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.3;
+}
+
+#topbar .brand-logo + .brand-text {
+  padding-inline-start: 12px;
+}
+
+#topbar .brand-text b {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#topbar .brand-text small {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, .65);
+  font-size: .72rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+
+/* الناف في منتصف الهيدر الحقيقي */
+#topbar .main-nav {
+  justify-self: center;
+  align-self: center;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 28px;
+
+  min-width: max-content;
+  overflow: visible;
+}
+
+
+/* روابط الناف */
+#topbar .nav-link {
+  min-height: 42px;
+  padding: 0 4px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 0;
+  background: transparent;
+
+  color: rgba(255, 255, 255, .78);
+  font-size: .95rem;
+  font-weight: 500;
+  white-space: nowrap;
+
+  transition: color 140ms var(--ease);
+}
+
+#topbar .nav-link:hover {
+  color: #fff;
+  background: transparent;
+}
+
+#topbar .nav-link.active {
+  color: #fff;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 700;
+}
+
+
+/* الجرس في الطرف المقابل */
+#topbar .nav-actions {
+  justify-self: end;
+  align-self: center;
+  position: relative;
+}
+
+/* ---------------------------------------------------------
+   4. زر أيقونة / عدّاد الإشعارات / لوحة الإشعارات
+--------------------------------------------------------- */
+:is(#topbar, #app) .icon-button {
+  width: var(--h-md);
+  height: var(--h-md);
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--white);
+  color: var(--iu-navy);
+  transition: border-color 140ms var(--ease), background 140ms var(--ease);
+}
+
+:is(#topbar, #app) .icon-button:hover {
+  border-color: var(--iu-navy);
+  background: var(--navy-soft);
+}
+
+:is(#topbar, #app) .icon-button[aria-expanded="true"] {
+  border-color: var(--iu-navy);
+  background: var(--navy-tint);
+}
+
+#topbar .icon-button {
+  border: 0;
+  background: transparent;
+  color: #fff;
+  box-shadow: none;
+}
+
+#topbar .icon-button:hover {
+  border-color: rgba(255, 255, 255, .5);
+  background: rgba(255, 255, 255, .16);
+}
+
+#topbar .icon-button[aria-expanded="true"] {
+  border-color: #fff;
+  background: #fff;
+  color: var(--iu-navy);
+}
+
+#topbar .notification-count {
+  position: absolute;
+  inset-block-start: -6px;
+  inset-inline-start: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding-inline: 5px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--iu-navy);
+  border-radius: var(--r-pill);
+  background: var(--danger);
+  color: var(--white);
+  font-size: .72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+#topbar .notifications-panel {
+  position: absolute;
+  inset-block-start: calc(100% + 10px);
+  inset-inline-end: 0;
+  width: min(380px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--white);
+  box-shadow: var(--sh-3);
+}
+
+#topbar .panel-head {
+  padding: var(--gap-3) var(--gap-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  min-height: 52px;
+  border-bottom: 1px solid var(--line);
+  background: var(--head-bg);
+}
+
+#topbar .panel-head strong {
+  color: var(--navy-deep);
+  font-size: .98rem;
+  font-weight: 700;
+}
+
+:is(#topbar, #app) .text-button {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--teal-ink);
+  font-size: .86rem;
+  font-weight: 600;
+}
+
+:is(#topbar, #app) .text-button:hover {
+  background: var(--teal-tint);
+}
+
+#topbar .notification-list {
+  max-height: 380px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+#topbar .notification-item {
+  width: 100%;
+  padding: var(--gap-3) var(--gap-5);
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: var(--gap-3);
+  text-align: start;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+  color: var(--ink);
+  transition: background 120ms var(--ease);
+}
+
+#topbar .notification-item:last-child {
+  border-bottom: 0;
+}
+
+#topbar .notification-item:hover {
+  background: var(--row-hover);
+}
+
+#topbar .notification-item.unread {
+  background: var(--teal-tint);
+}
+
+#topbar .notification-item.unread .notification-icon {
+  background: var(--white);
+}
+
+#topbar .notification-item strong {
+  display: block;
+  color: var(--navy-deep);
+  font-size: .92rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+#topbar .notification-item p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: .85rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+#topbar .notification-item small {
+  display: block;
+  margin-top: var(--gap-1);
+  color: var(--muted-2);
+  font-size: .78rem;
+  unicode-bidi: plaintext;
+}
+
+#topbar .notification-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--navy-tint);
+  color: var(--iu-navy);
+}
+
+#topbar .notification-icon .icon {
+  width: 17px;
+  height: 17px;
+}
+
+/* ---------------------------------------------------------
+   5. الأيقونة
+--------------------------------------------------------- */
+:is(#topbar, #app, #toast, .portal-entry) .icon {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+:is(#topbar, #app, #toast, .portal-entry) .icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ---------------------------------------------------------
+   6. إطار الصفحة وعناوينها
+   عرض واحد لكل الصفحات في الواجهتين.
+--------------------------------------------------------- */
+.page-shell {
+  width: min(var(--shell), calc(100% - var(--shell-gutter)));
+  min-height: calc(100vh - var(--topbar-h));
+  margin-inline: auto;
+  padding-block: var(--gap-8) 80px;
+}
+
+#app {
+  width: min(var(--shell), calc(100% - var(--shell-gutter)));
+  margin-inline: auto;
+  padding-block: var(--gap-8) 80px;
+}
+
+/* إن كان القالب يلفّ #app داخل .page-shell فالغلاف هو صاحب العرض */
+.page-shell #app {
+  width: 100%;
+  margin-inline: 0;
+  padding-block: 0;
+}
+
+#app .page-head {
+  margin-bottom: var(--gap-6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--gap-6);
+  text-align: start;
+}
+
+#app .page-head h1 {
+  color: var(--navy-deep);
+  font-size: clamp(1.5rem, 2.2vw, 1.9rem);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+#app .page-head p {
+  margin-top: 6px;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: .95rem;
+}
+
+#app .eyebrow {
+  margin-bottom: 6px;
+  color: var(--gold-ink);
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+/* الرجوع عنصر تحكّم لا نص سائب: له حدّ وسطح وارتفاع كبقية الأزرار،
+   فيُقرأ أنه قابل للنقر من النظرة الأولى */
+#app :is(.page-back, .back-link) {
+  width: fit-content;
+  min-height: var(--h-sm);
+  margin: 0 0 var(--gap-5);
+  padding-inline: 12px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--white);
+  color: var(--ink-2);
+  font-size: .88rem;
+  font-weight: 500;
+  box-shadow: var(--sh-1);
+  transition: color 140ms var(--ease), background 140ms var(--ease),
+              border-color 140ms var(--ease);
+}
+
+#app :is(.page-back, .back-link):hover {
+  border-color: var(--line-strong);
+  background: var(--navy-soft);
+  color: var(--navy-deep);
+}
+
+#app :is(.page-back, .back-link):active {
+  background: var(--navy-tint);
+}
+
+#app :is(.page-back, .back-link) .icon {
+  width: 17px;
+  height: 17px;
+  transform: scaleX(-1);
+}
+
+/* ---------------------------------------------------------
+   7. الأزرار
+--------------------------------------------------------- */
+:is(#app, .portal-entry) .button {
+  min-height: var(--control-height);
+  padding: 8px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-2);
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: var(--iu-navy);
+  color: var(--white);
+  font-size: .94rem;
+  font-weight: 600;
+  line-height: 1.4;
+  box-shadow: var(--sh-1);
+  transition: background 140ms var(--ease), border-color 140ms var(--ease),
+              color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+
+:is(#app, .portal-entry) .button .icon {
+  width: 18px;
+  height: 18px;
+}
+
+:is(#app, .portal-entry) .button:hover {
+  background: var(--navy-deep);
+}
+
+:is(#app, .portal-entry) .button:active {
+  background: #0a2137;
+  box-shadow: none;
+}
+
+:is(#app, .portal-entry) .button:is(:disabled, [aria-disabled="true"]) {
+  cursor: not-allowed;
+  background: #e1e5ea;
+  border-color: transparent;
+  color: #6b7681;
+  box-shadow: none;
+}
+
+:is(#app, .portal-entry) .button.secondary {
+  border-color: var(--line-strong);
+  background: var(--white);
+  color: var(--navy-deep);
+}
+
+:is(#app, .portal-entry) .button.secondary:hover {
+  border-color: var(--iu-navy);
+  background: var(--navy-soft);
+}
+
+:is(#app, .portal-entry) .button.secondary:active {
+  background: var(--navy-tint);
+}
+
+:is(#app, .portal-entry) .button.secondary:disabled {
+  background: var(--white);
+  border-color: var(--line);
+  color: #7c868f;
+}
+
+/* الذهبي للفعل الاختياري (التقييم) — نص داكن ليحقق التباين */
+:is(#app, .portal-entry) .button.gold {
+  background: var(--iu-gold);
+  color: #2e2309;
+}
+
+:is(#app, .portal-entry) .button.gold:hover {
+  background: #a9883f;
+}
+
+/* قاعدة .gold تأتي بعد قاعدة :disabled العامة وبنفس وزنها، فتلغيها.
+   نعيد حالة التعطيل صراحة حتى يبدو الزر معطّلًا فعلًا. */
+:is(#app, .portal-entry) .button.gold:is(:disabled, [aria-disabled="true"]) {
+  background: #e1e5ea;
+  color: #6b7681;
+}
+
+:is(#app, .portal-entry) .button.danger-text {
+  color: var(--danger);
+}
+
+:is(#app, .portal-entry) .button.danger-text:hover {
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+  color: #8a2f2f;
+}
+
+:is(#app, .portal-entry) .button.danger-outline {
+  border-color: var(--danger-line);
+  background: var(--white);
+  color: var(--danger);
+  box-shadow: none;
+}
+
+:is(#app, .portal-entry) .button.danger-outline:hover {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+:is(#app, .portal-entry) .button.small {
+  min-height: var(--h-sm);
+  padding: 6px 13px;
+  font-size: .87rem;
+}
+
+:is(#app, .portal-entry) .button.small .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* حالة الانتظار: aria-busy="true" أو class="is-loading" */
+:is(#app, .portal-entry) .button:is([aria-busy="true"], .is-loading) {
+  cursor: progress;
+  pointer-events: none;
+}
+
+:is(#app, .portal-entry) .button:is([aria-busy="true"], .is-loading) .icon {
+  display: none;
+}
+
+:is(#app, .portal-entry) .button:is([aria-busy="true"], .is-loading)::before {
+  content: "";
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  opacity: .85;
+  animation: iu-spin 620ms linear infinite;
+}
+
+@keyframes iu-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------------------------------------------------------
+   8. بطاقات المؤشرات
+--------------------------------------------------------- */
+#app .stats-grid {
+  width: 100%;
+  margin: 0 0 var(--gap-6);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-3);
+}
+
+#app .stat-card {
+  --stat-accent: var(--iu-navy);
+  --stat-soft: var(--navy-tint);
+  min-width: 0;
+  min-height: 104px;
+  padding: var(--gap-5) var(--gap-5);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-4);
+  border: 0;
+  /* التمييز من لون الرقم نفسه، لا من شريط على الحافة */
+  border-radius: var(--r-lg);
+  background: var(--white);
+  box-shadow: var(--sh-1);
+}
+
+/* الأيقونة علامة هادئة في النهاية، فتصطف الأرقام الأربعة على حافة البداية */
+#app .stat-card > div {
+  order: -1;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 3px;
+}
+
+#app .stat-card > div > span {
+  display: block;
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+#app .stat-card strong {
+  display: block;
+  /* الرقم نفسه يحمل لون الحالة، فالصف يُقرأ بالألوان قبل الأرقام */
+  color: var(--stat-accent);
+  font-size: 1.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+}
+
+#app .stat-card .stat-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--stat-soft);
+  color: var(--stat-accent);
+}
+
+#app .stat-card .stat-icon .icon {
+  width: 19px;
+  height: 19px;
+}
+
+#app .stat-card[data-tone="total"] { --stat-accent: var(--iu-navy); --stat-soft: var(--navy-tint); }
+#app .stat-card[data-tone="new"] { --stat-accent: var(--state-new); --stat-soft: var(--state-new-bg); }
+#app .stat-card[data-tone="processing"] { --stat-accent: var(--state-processing); --stat-soft: var(--state-processing-bg); }
+#app .stat-card[data-tone="closed"] { --stat-accent: var(--success); --stat-soft: var(--success-bg); }
+#app .stat-card[data-tone="rating"] { --stat-accent: var(--gold-ink); --stat-soft: var(--gold-tint); }
+
+/* ---------------------------------------------------------
+   9. الأسطح
+--------------------------------------------------------- */
+/* الكرت أبيض على أرضية كريمية — هذا وحده يكفي لتعريفه.
+   لا حدّ ولا خط ملوّن؛ اللون محجوز للحالات والأزرار والتركيز. */
+#app .surface {
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--white);
+  box-shadow: var(--sh-2);
+}
+
+#app .surface + .surface {
+  margin-top: var(--gap-5);
+}
+
+#app .surface-header {
+  min-height: 64px;
+  padding: var(--gap-3) var(--gap-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+}
+
+#app .surface-header :is(h2, h3) {
+  color: var(--navy-deep);
+  font-size: 1.04rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+#app .surface-body {
+  padding: var(--gap-6);
+}
+
+#app .filters {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+  flex-wrap: wrap;
+}
+
+#app .filter-control {
+  min-width: 0;
+}
+
+/* علامة ذهبية صغيرة قبل عناوين الأقسام — كامل طبقة الهوية الزخرفية */
+#app :is(.surface-header, .content-section) h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* علامة العناوين: وحدة الباترن كما هي في دليل الهوية — نجمة ذهبية
+   مفرّغة بقلب فيروزي، مستخرجة من ملف الهوية بدقة عالية */
+#app :is(.surface-header, .content-section) h2::before {
+  content: "";
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%2716%2016%2064%2064%27%3E%3Cpath%20d%3D%27M78%2C48%2069.21%2C56.79%2069.21%2C69.21%2056.79%2C69.21%2048%2C78%2039.21%2C69.21%2026.79%2C69.21%2026.79%2C56.79%2018%2C48%2026.79%2C39.21%2026.79%2C26.79%2039.21%2C26.79%2048%2C18%2056.79%2C26.79%2069.21%2C26.79%2069.21%2C39.21Z%27%20fill%3D%27none%27%20stroke%3D%27%23b9995a%27%20stroke-width%3D%274%27%20stroke-linejoin%3D%27round%27%2F%3E%3Cpath%20d%3D%27M60.6%2C48%2056.91%2C51.69%2056.91%2C56.91%2051.69%2C56.91%2048%2C60.6%2044.31%2C56.91%2039.09%2C56.91%2039.09%2C51.69%2035.4%2C48%2039.09%2C44.31%2039.09%2C39.09%2044.31%2C39.09%2048%2C35.4%2051.69%2C39.09%2056.91%2C39.09%2056.91%2C44.31Z%27%20fill%3D%27%23208db0%27%2F%3E%3C%2Fsvg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* ---------------------------------------------------------
+   10. الحقول
+   سهم القائمة له مساحته الخاصة، والنص يُقصّ قبل أن يصل إليه.
+--------------------------------------------------------- */
+#app .field-control {
+  width: 100%;
+  min-height: var(--h-lg);
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background-color: var(--field);
+  color: var(--ink);
+  font-size: .97rem;
+  line-height: 1.6;
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+
+#app .field-control::placeholder {
+  color: #8d97a2;
+}
+
+#app .field-control:hover:not(:disabled) {
+  border-color: #aeb8c4;
+}
+
+/* التركيز على الحقول: حدّ ملوّن فقط.
+   المتصفح يرسم إطارًا خارجيًا حول القوائم المنسدلة عند فتحها، فنلغيه
+   ونكتفي بحدّ فيروزي مضاعف بالداخل — يبقى التركيز واضحًا بلا إطار مزعج. */
+#app .field-control:focus,
+#app .field-control:focus-visible {
+  border-color: var(--iu-teal);
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--iu-teal);
+}
+
+#app .field-control:disabled {
+  cursor: not-allowed;
+  border-color: var(--line);
+  background-color: #f2f4f7;
+  color: #8d97a2;
+}
+
+#app select.field-control {
+  color-scheme: light;
+  appearance: none;
+  -webkit-appearance: none;
+  /* 44px محجوزة للسهم في جهة النهاية، والنص لا يدخلها إطلاقًا */
+  padding-inline: 14px 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--navy-deep);
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%235f6b78' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 17px 17px;
+  /* الصفحة RTL: جهة النهاية هي اليسار */
+  background-position: left 14px center;
+}
+
+/* الاتجاه معرَّف على #wrap لا على <html>، فلو كانت لغة Odoo إنجليزية
+   يصبح <html dir="ltr"> بينما المنصة RTL. :dir() تقرأ الاتجاه المحسوب
+   فعليًا للعنصر نفسه، بعكس [dir="ltr"] التي تطابق أي سلف. */
+#app select.field-control:dir(ltr) {
+  background-position: right 14px center;
+}
+
+#app select.field-control option {
+  background-color: var(--white);
+  color: var(--navy-deep);
+}
+
+#app .filters .field-control {
+  width: auto;
+  min-width: 190px;
+}
+
+#app .form-field {
+  min-width: 0;
+}
+
+#app .form-field label {
+  display: block;
+  margin-bottom: var(--gap-2);
+  color: var(--navy-deep);
+  font-size: .92rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+#app .required {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* القالب يرسل <span class="required"></span> فارغًا، فالعلامة تأتي من هنا */
+#app .required:empty::after {
+  content: "*";
+}
+
+#app .optional-label {
+  margin-inline-start: 6px;
+  color: var(--muted-2);
+  font-size: .8rem;
+  font-weight: 400;
+}
+
+#app textarea.field-control {
+  min-height: 140px;
+  resize: vertical;
+}
+
+#app .hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.6;
+}
+
+#app .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+#app .form-actions {
+  margin-top: var(--gap-7);
+  padding-top: var(--gap-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  border-top: 1px solid var(--line);
+}
+
+#app .form-actions-group {
+  display: flex;
+  gap: var(--gap-3);
+  flex-wrap: wrap;
+}
+
+/* رسالة خطأ الحقل */
+#app .field-error-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--danger);
+  font-size: .82rem;
+  font-weight: 500;
+  line-height: 1.6;
+  text-align: start;
+}
+
+#app .field-error-message::before {
+  content: "!";
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  margin-top: 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+#app .field-control.has-error {
+  border-color: #cf9a9a;
+  background-color: #fffafa;
+}
+
+#app .field-control.has-error:focus,
+#app .field-control.has-error:focus-visible {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+/* ---------------------------------------------------------
+   11. الجداول
+--------------------------------------------------------- */
+#app .table-wrap {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+#app .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: start;
+}
+
+/* الجدول: ترويسة أثقل وخط سماوي يفصلها، وصفوف متناوبة بدل الخطوط
+   الرمادية بين كل صفّين. الحدّ الوحيد الباقي سماوي. */
+#app .data-table th {
+  padding: var(--gap-3) var(--gap-4);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--head-bg);
+  color: var(--navy-deep);
+  font-size: .82rem;
+  font-weight: 600;
+  text-align: start;
+  white-space: nowrap;
+}
+
+#app .data-table td {
+  padding: var(--gap-3) var(--gap-4);
+  border-top: 0;
+  color: var(--ink-2);
+  font-size: .92rem;
+  vertical-align: middle;
+}
+
+#app .data-table tbody tr:nth-child(even) {
+  background: #f7fafc;
+}
+
+/* شريط سماوي على حافة البداية عند المرور — محجوز دائمًا فلا يقفز الصف */
+#app .data-table tbody td:first-child {
+  border-inline-start: 3px solid transparent;
+}
+
+#app .data-table tbody tr:hover td:first-child {
+  border-inline-start-color: var(--iu-teal);
+}
+
+#app .data-table tbody tr:first-child td {
+  border-top: 0;
+}
+
+#app .data-table tbody tr {
+  transition: background 120ms var(--ease);
+}
+
+#app .data-table tbody tr:hover {
+  background: var(--row-hover);
+}
+
+#app .request-title {
+  min-width: 200px;
+}
+
+#app .request-title strong {
+  display: block;
+  color: var(--navy-deep);
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#app .request-title small,
+#app .meta {
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+#app .requests-table .request-title small {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  text-align: start;
+}
+
+/* رقم الطلب: لاتيني دائمًا ومقروء داخل نص عربي */
+#app .request-code {
+  color: var(--gold-ink);
+  font-size: .86rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+}
+
+#app .draft-code {
+  padding: 4px 9px;
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--head-bg);
+  color: var(--muted);
+  font-size: .83rem;
+  font-weight: 600;
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+}
+
+#app .draft-title {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+}
+
+#app .row-actions {
+  display: flex;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+}
+
+#app .requests-table .row-actions {
+  flex-wrap: nowrap;
+  justify-content: center;
+  width: max-content;
+  min-width: 100%;
+}
+
+#app .requests-table .row-actions .button {
+  white-space: nowrap;
+}
+
+/* التواريخ: لا تنكسر في منتصف التاريخ */
+#app .data-table td[data-label*="تاريخ"] {
+  white-space: nowrap;
+  unicode-bidi: plaintext;
+}
+
+/* ---------------------------------------------------------
+   12. الشارات
+--------------------------------------------------------- */
+#app :is(.status, .priority) {
+  width: max-content;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: var(--r-pill);
+  font-size: .81rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+#app .status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+#app .status-new { background: var(--state-new-bg); color: var(--state-new); }
+#app .status-processing { background: var(--state-processing-bg); color: var(--state-processing); }
+#app .status-confirmation { background: var(--state-confirmation-bg); color: var(--state-confirmation); }
+#app .status-closed { background: var(--success-bg); color: var(--success); }
+#app .status-draft { background: #eef0f3; color: var(--iu-grey-3); }
+
+/* الأولوية ليست حالة الطلب، فلا تستحق كبسولة ملوّنة تنافس شارة الحالة.
+   نقطة صغيرة بلونها ونصّ هادئ: تُقرأ بلمحة وتترك التباين للحالة. */
+#app .priority {
+  min-height: 0;
+  padding: 0;
+  gap: 6px;
+  background: none;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+#app .priority::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--priority-dot, var(--iu-grey-1));
+}
+
+#app .priority-high { --priority-dot: var(--danger); }
+#app .priority-medium { --priority-dot: var(--warning); }
+#app .priority-low { --priority-dot: var(--iu-grey-1); }
+
+#app .empty-state {
+  position: relative;
+  isolation: isolate;
+  padding: 64px var(--gap-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: .94rem;
+}
+
+#app .empty-state .icon {
+  width: 34px;
+  height: 34px;
+  color: var(--iu-grey-1);
+}
+
+/* الفراغ هو أنسب مكان لزخرفة الهوية: وردة الباترن الفيروزية خلف الرسالة.
+   ضعي الصورة في website/static/src/img/ — وإن غابت لا يتغيّر شيء سواها. */
+#app .empty-state::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  z-index: -1;
+  width: 190px;
+  height: 190px;
+  background-image: url("/website/static/src/img/pattern-rosette.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: .14;
+  transform: translate(50%, -50%);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------
+   13. البحث والتصفية والترقيم
+--------------------------------------------------------- */
+#app .requests-page-head {
+  margin-bottom: var(--gap-5);
+}
+
+#app .requests-stats {
+  margin-bottom: var(--gap-5);
+}
+
+#app .requests-table-wrap {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+#app .requests-surface .surface-header:has(.search-box) {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(220px, 340px) minmax(180px, 220px);
+  align-items: center;
+  gap: var(--gap-3);
+}
+
+#app .requests-surface .surface-header > h2 {
+  justify-self: start;
+}
+
+#app .search-box {
+  position: relative;
+  width: 100%;
+}
+
+#app .search-box > .icon {
+  position: absolute;
+  inset-inline-start: 14px;
+  inset-block-start: 50%;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  color: var(--muted-2);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+#app .search-box .search-control {
+  width: 100%;
+  min-width: 0;
+  /* 42px محجوزة لأيقونة البحث في جهة البداية */
+  padding-inline: 42px 14px;
+  text-align: start;
+}
+
+#app .search-box:focus-within > .icon {
+  color: var(--iu-teal);
+}
+
+#app .status-filter-box {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+#app .status-filter-box .field-control {
+  width: 100%;
+  min-width: 0;
+}
+
+#app :is(.requests-pagination, .performance-pagination) {
+  padding: var(--gap-3) var(--gap-5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--gap-1);
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  background: var(--white);
+}
+
+#app .requests-pagination:empty {
+  display: none;
+}
+
+#app .requests-pagination-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-1);
+  flex-wrap: wrap;
+}
+
+#app :is(.requests-pagination, .performance-pagination) button {
+  min-width: var(--h-sm);
+  height: var(--h-sm);
+  padding-inline: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: .87rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+#app :is(.requests-pagination, .performance-pagination) button:hover:not(:disabled) {
+  background: var(--navy-soft);
+  color: var(--navy-deep);
+}
+
+#app :is(.requests-pagination, .performance-pagination) button:is(.active, [aria-current="page"]) {
+  border-color: var(--line-strong);
+  background: var(--white);
+  color: var(--navy-deep);
+  font-weight: 700;
+  box-shadow: var(--sh-1);
+}
+
+#app :is(.requests-pagination, .performance-pagination) button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+/* شريط «عرض جميع الطلبات» */
+#app .requests-view-all {
+  padding: var(--gap-3) var(--gap-5);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  border-top: 1px solid var(--line);
+  background: var(--white);
+}
+
+#app .view-all-link {
+  min-height: var(--h-sm);
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--teal-ink);
+  font-size: .92rem;
+  font-weight: 600;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+
+#app .view-all-link:hover {
+  background: var(--teal-tint);
+  color: var(--navy-deep);
+}
+
+/* ---------------------------------------------------------
+   14. ترويسة الطلب — بطاقة مستند هادئة، لا لافتة ملوّنة
+--------------------------------------------------------- */
+/* بطاقة السجل: الترويسة وشريط المراحل جسم واحد، بدل بطاقتين
+   تفصلهما مساحة بيضاء لا تحمل أي معلومة */
+#app .record-card {
+  margin-bottom: var(--gap-6);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--white);
+  box-shadow: var(--sh-2);
+}
+
+#app .detail-hero {
+  padding: var(--gap-6) 28px;
+  background: var(--white);
+}
+
+#app .record-card > :is(.detail-hero, .ticket-progress) {
+  margin: 0;
+  border-inline: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* سطر السجل: التسمية ورقم الطلب في جهة، وحالته في الجهة المقابلة.
+   السطر صار يحمل معلومة بدل أن يكون تسمية ساكنة. */
+#app .detail-kicker {
+  margin-bottom: var(--gap-4);
+  padding-bottom: var(--gap-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+}
+
+#app .kicker-main {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-3);
+  flex-wrap: wrap;
+}
+
+#app .detail-kicker strong {
+  color: var(--muted);
+  font-size: .79rem;
+  font-weight: 600;
+  letter-spacing: .05em;
+}
+
+/* رقم الطلب معرّف السجل، فيأخذ لون الهوية كاملًا لا تظليلًا باهتًا */
+#app .detail-hero .ticket-code {
+  padding: 4px 12px;
+  display: inline-block;
+  border-radius: var(--r-sm);
+  background: var(--iu-navy);
+  color: #fff;
+  font-size: .8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .06em;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+#app .detail-hero h1 {
+  margin-bottom: var(--gap-4);
+  max-width: 44ch;
+  color: var(--navy-deep);
+  font-size: clamp(1.35rem, 2vw, 1.75rem);
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: -.015em;
+  overflow-wrap: anywhere;
+}
+
+/* كل حقائق الطلب في شبكة واحدة داخل البطاقة نفسها:
+   النوع والإدارة وتاريخ الإنشاء، ثم صاحب الطلب ومسؤول الدعم والأولوية */
+#app .detail-meta {
+  display: grid;
+  /* ثلاثة أعمدة: التاريخ يأخذ عرضًا كافيًا فلا ينكسر سطره */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-4) var(--gap-6);
+  padding-top: var(--gap-4);
+  border-top: 1px solid var(--line);
+}
+
+#app .detail-meta-item {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#app .detail-meta-item small {
+  color: var(--muted-2);
+  font-size: .78rem;
+  font-weight: 400;
+}
+
+#app .detail-meta-item strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: .9rem;
+  font-weight: 600;
+  unicode-bidi: plaintext;
+}
+
+#app .detail-meta-item .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--muted-2);
+}
+
+/* ---------------------------------------------------------
+   15. شريط مراحل الطلب
+   كل مرحلة تملك الوصلة التي تليها، فيمتلئ الجزء المقطوع فعلًا.
+--------------------------------------------------------- */
+/* شريط المراحل قاعدةُ البطاقة، بأرضية فاتحة تفصله عن بيانات الطلب
+   وبارتفاع يكفي محتواه فقط */
+#app .ticket-progress {
+  padding: var(--gap-4) 28px var(--gap-3);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  background: var(--head-bg);
+}
+
+#app .ticket-stage {
+  min-width: 0;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--gap-2);
+  position: relative;
+  z-index: 1;
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+}
+
+#app .ticket-stage:not(:last-child)::after {
+  content: "";
+  display: block;
+  position: absolute;
+  z-index: 0;
+  inset-block-start: 12px;
+  inset-inline-start: calc(50% + 21px);
+  inset-inline-end: calc(-50% + 21px);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+#app .ticket-stage.is-complete::after {
+  background: var(--iu-teal);
+}
+
+#app .ticket-stage-marker {
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--white);
+  color: var(--muted-2);
+  font-size: .79rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+#app .ticket-stage-marker .icon {
+  width: 14px;
+  height: 14px;
+}
+
+#app .ticket-stage.is-complete {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+#app .ticket-stage.is-complete .ticket-stage-marker {
+  border-color: var(--iu-teal);
+  background: var(--iu-teal);
+  color: var(--white);
+}
+
+#app .ticket-stage.is-current {
+  color: var(--navy-deep);
+  font-weight: 700;
+}
+
+#app .ticket-stage.is-current .ticket-stage-marker {
+  border-color: var(--iu-navy);
+  background: var(--iu-navy);
+  color: var(--white);
+  box-shadow: 0 0 0 4px var(--navy-tint);
+}
+
+#app .ticket-stage-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------
+   17. عمود تفاصيل الطلب
+   عمود واحد بعرض منطقة المحتوى. سجل المتابعة في نهايته.
+--------------------------------------------------------- */
+#app .detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+#app .detail-stack > .surface {
+  width: 100%;
+  margin-top: 0;
+}
+
+#app .content-section {
+  padding: var(--gap-6);
+}
+
+#app .content-section + .content-section {
+  border-top: 1px solid var(--line);
+}
+
+#app .content-section :is(h2, h3) {
+  margin-bottom: var(--gap-3);
+  color: var(--navy-deep);
+  font-size: 1.04rem;
+  font-weight: 700;
+}
+
+#app .problem-copy {
+  max-width: 78ch;
+  color: var(--ink-2);
+  font-size: .98rem;
+  line-height: 1.9;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+#app .attachment {
+  margin-top: var(--gap-5);
+  padding: var(--gap-3) var(--gap-3);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--head-bg);
+  transition: border-color 140ms var(--ease), background 140ms var(--ease);
+}
+
+#app .attachment:hover {
+  border-color: var(--line-strong);
+  background: var(--white);
+}
+
+#app .attachment .file-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--navy-tint);
+  color: var(--iu-navy);
+}
+
+#app .attachment .file-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+#app .attachment-info {
+  min-width: 0;
+}
+
+/* اسم الملف قد يخلط العربية باللاتينية: plaintext يعرضه باتجاهه الطبيعي */
+#app .attachment-info strong {
+  display: block;
+  max-width: 34ch;
+  overflow: hidden;
+  color: var(--navy-deep);
+  font-size: .92rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  unicode-bidi: plaintext;
+}
+
+#app .attachment-info small {
+  display: block;
+  color: var(--muted);
+  font-size: .81rem;
+}
+
+#app .solution-box {
+  padding: var(--gap-4);
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--navy-soft);
+  color: var(--ink-2);
+  line-height: 1.9;
+}
+
+/* أسطر المستخدم وحدها تُحفظ، لا مسافات القالب */
+#app .solution-text {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+#app .solution-meta {
+  display: block;
+  margin-top: var(--gap-3);
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: .81rem;
+  unicode-bidi: plaintext;
+}
+
+#app .action-callout {
+  padding: var(--gap-5);
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--navy-soft);
+}
+
+#app .content-section > .action-callout,
+#app .solution-box + .action-callout {
+  margin-top: var(--gap-5);
+}
+
+#app .action-callout h3 {
+  margin-bottom: 4px;
+  color: var(--navy-deep);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+#app .action-callout p {
+  margin-bottom: var(--gap-4);
+  color: var(--muted);
+  font-size: .92rem;
+}
+
+#app .action-callout p:last-child {
+  margin-bottom: 0;
+}
+
+#app .action-row {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--gap-3);
+  flex-wrap: wrap;
+}
+
+#app .action-callout .button {
+  min-width: 150px;
+}
+
+/* ---------------------------------------------------------
+   18. سجل المتابعة
+--------------------------------------------------------- */
+#app .timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#app .timeline li {
+  position: relative;
+  padding-block: 0 var(--gap-5);
+  padding-inline: 28px 0;
+}
+
+#app .timeline li:last-child {
+  padding-bottom: 0;
+}
+
+#app .timeline li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 4px;
+  inset-block-start: 8px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+#app .timeline li::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 8px;
+  inset-block-start: 20px;
+  width: 1px;
+  height: calc(100% - 12px);
+  background: var(--line);
+}
+
+#app .timeline li:last-child::after {
+  display: none;
+}
+
+#app .timeline strong {
+  display: block;
+  color: var(--ink-2);
+  font-size: .94rem;
+  font-weight: 500;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+#app .timeline small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted-2);
+  font-size: .81rem;
+  line-height: 1.6;
+  unicode-bidi: plaintext;
+}
+
+#app .timeline li:last-child strong {
+  color: var(--navy-deep);
+  font-weight: 700;
+}
+
+#app .timeline li:last-child::before {
+  background: var(--iu-navy);
+  box-shadow: 0 0 0 4px var(--navy-tint);
+}
+
+/* سجل المتابعة في نهاية الصفحة وبعرض المحتوى كاملًا — لا عمود جانبي ولا التصاق */
+#app .timeline-surface {
+  position: static;
+  width: 100%;
+  margin-top: 0;
+}
+
+/* بعرض المحتوى كاملًا: العنوان في جهة والتاريخ في الجهة المقابلة،
+   والترتيب يبقى من أعلى إلى أسفل فلا يختل تسلسل الأحداث */
+#app .timeline-surface .timeline li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  align-items: baseline;
+  column-gap: var(--gap-6);
+}
+
+#app .timeline-surface .timeline small {
+  margin-top: 0;
+  text-align: start;
+}
+
+/* ---------------------------------------------------------
+   19. المحادثة
+--------------------------------------------------------- */
+#app .chat-card {
+  background: var(--white);
+}
+
+#app .chat-body {
+  min-height: 240px;
+  max-height: 430px;
+  padding: var(--gap-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--head-bg);
+}
+
+#app .chat-message {
+  width: fit-content;
+  max-width: 62%;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+}
+
+#app .chat-message.mine {
+  align-self: flex-start;
+  border-color: #cfe3ea;
+  border-end-start-radius: 4px;
+  background: var(--teal-tint);
+}
+
+#app .chat-message.theirs {
+  align-self: flex-end;
+  border-color: var(--line);
+  border-end-end-radius: 4px;
+  background: var(--white);
+}
+
+#app .chat-author {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--navy-deep);
+  font-size: .83rem;
+  font-weight: 700;
+}
+
+#app .chat-text {
+  color: var(--ink-2);
+  font-size: .95rem;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
+}
+
+#app .chat-time {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted-2);
+  font-size: .76rem;
+  text-align: end;
+  unicode-bidi: plaintext;
+}
+
+#app .chat-attachments {
+  margin-top: var(--gap-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#app .chat-attachment {
+  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--white);
+  color: var(--teal-ink);
+  font-size: .81rem;
+  font-weight: 600;
+}
+
+#app .chat-attachment:hover {
+  border-color: var(--iu-teal);
+  background: var(--teal-tint);
+}
+
+#app .chat-attachment .icon {
+  width: 14px;
+  height: 14px;
+}
+
+#app .chat-attachment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  unicode-bidi: plaintext;
+}
+
+#app .chat-empty {
+  margin: auto;
+  color: var(--muted);
+  font-size: .94rem;
+}
+
+#app .chat-composer {
+  padding: var(--gap-3) var(--gap-4);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--gap-3);
+  align-items: center;
+  border-top: 1px solid var(--line);
+  background: var(--white);
+}
+
+#app .chat-input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--h-md);
+  padding: 10px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--field);
+  color: var(--ink);
+  font-size: .95rem;
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+
+#app .chat-input::placeholder {
+  color: #8d97a2;
+}
+
+#app .chat-input:hover {
+  border-color: #aeb8c4;
+}
+
+#app .chat-input:focus,
+#app .chat-input:focus-visible {
+  border-color: var(--iu-teal);
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--iu-teal);
+}
+
+#app .chat-attach {
+  min-height: var(--h-md);
+  padding: 8px 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--white);
+  color: var(--navy-deep);
+  font-size: .89rem;
+  font-weight: 600;
+  transition: border-color 140ms var(--ease), background 140ms var(--ease);
+}
+
+#app .chat-attach:hover {
+  border-color: var(--iu-navy);
+  background: var(--navy-soft);
+}
+
+#app .chat-send {
+  border-radius: var(--r-md);
+}
+
+#app :is(.chat-attach, .chat-send) .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* ---------------------------------------------------------
+   20. التوست
+   العنصر واحد (#toast) في الواجهتين، فلا حاجة لاسمين ولا !important.
+--------------------------------------------------------- */
+#toast {
+  --toast-color: var(--danger);
+  --toast-bg: var(--danger-bg);
+  --toast-border: var(--danger-line);
+  position: fixed;
+  inset-block-start: 20px;
+  inset-inline-end: 20px;
+  z-index: 1090;
+  min-width: 280px;
+  max-width: calc(100vw - 40px);
+  min-height: 58px;
+  padding: var(--gap-3) var(--gap-5);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+  direction: rtl;
+  text-align: start;
+  overflow: hidden;
+  border: 1px solid var(--toast-border);
+  border-radius: var(--r-md);
+  background: var(--toast-bg);
+  color: var(--toast-color);
+  /* الحدّ والخلفية والنص من عائلة لونية واحدة لكل حالة */
+  box-shadow: var(--sh-3);
+  font-family: var(--font);
+  font-size: .94rem;
+  font-weight: 600;
+  /* قالب الدعم يعطي العنصر class="toast" وهو اسم مستخدم في Bootstrap
+     يجعله شفافًا ومخفيًا، فنعيد إظهاره صراحة عبر المعرّف */
+  opacity: 1;
+  visibility: visible;
+}
+
+/* [hidden] العامة تطال الأبناء فقط، و#toast جذر بنفسه */
+#toast[hidden] {
+  display: none;
+}
+
+#toast[data-type="success"] {
+  --toast-color: var(--success);
+  --toast-bg: var(--success-bg);
+  --toast-border: #c5e2d5;
+}
+
+#toast[data-type="warning"] {
+  --toast-color: var(--gold-ink);
+  --toast-bg: var(--gold-tint);
+  --toast-border: var(--gold-line);
+}
+
+#toast[data-type="error"] {
+  --toast-color: var(--danger);
+  --toast-bg: var(--danger-bg);
+  --toast-border: var(--danger-line);
+}
+
+#toast .toast-state-icon {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--toast-color);
+  color: #fff;
+  font-size: .9rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+#toast .toast-message {
+  flex: 1;
+  min-width: 0;
+  color: var(--toast-color);
+  overflow-wrap: anywhere;
+}
+
+/* مؤقّت الاختفاء: شريط سفلي ينضب. لا يلامس حدّ البطاقة فلا يتعارك معه. */
+#toast .toast-progress {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: 0;
+  height: 3px;
+  display: block;
+  background: var(--toast-color);
+  opacity: .45;
+  transform-origin: right center;
+  pointer-events: none;
+  animation: iu-toast-bar 2000ms linear forwards;
+}
+
+@keyframes iu-toast-bar {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* ---------------------------------------------------------
+   21. صفحة الدخول
+--------------------------------------------------------- */
+.portal-entry {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--gap-6);
+  background: var(--bg);
+}
+
+.portal-entry .entry-card {
+  width: min(620px, 100%);
+  padding: 44px var(--gap-8);
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--white);
+  box-shadow: var(--sh-2);
+}
+
+.portal-entry .entry-card .brand-logo {
+  height: 64px;
+  width: auto;
+  margin-inline: auto;
+  display: block;
+  object-fit: contain;
+}
+
+.portal-entry .entry-card h1 {
+  margin: var(--gap-4) 0 var(--gap-7);
+  color: var(--navy-deep);
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.portal-entry .entry-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-3);
+}
+
+.portal-entry .entry-option {
+  padding: var(--gap-5);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+  text-align: start;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--white);
+  transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease), transform 160ms var(--ease);
+}
+
+.portal-entry .entry-option:hover {
+  border-color: var(--iu-teal);
+  box-shadow: var(--sh-2);
+  transform: translateY(-2px);
+}
+
+.portal-entry .entry-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  border-radius: var(--r-md);
+  background: var(--navy-tint);
+  color: var(--iu-navy);
+}
+
+.portal-entry .entry-icon .icon {
+  width: 22px;
+  height: 22px;
+}
+
+.portal-entry .entry-option :is(b, small) {
+  display: block;
+}
+
+.portal-entry .entry-option b {
+  color: var(--navy-deep);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.portal-entry .entry-option small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: .87rem;
+}
+
+/* ---------------------------------------------------------
+   22. التجاوب
+--------------------------------------------------------- */
+
+/* توسيط أعمدة الحالة والأولوية والإجراء على الشاشات الواسعة فقط */
+@media (min-width: 1201px) {
+  #app .data-table td[data-label="الحالة"],
+  #app .data-table td[data-label="الأولوية"],
+  #app .data-table td[data-label="التقييم"],
+  #app .data-table .row-actions-cell,
+  #app .data-table th:last-child {
+    text-align: center;
+  }
+}
+
+@media (max-width: 1100px) {
+  :root {
+    --shell-gutter: 32px;
+  }
+
+  #app .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #app .timeline-surface .timeline li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #app .timeline-surface .timeline small {
+    margin-top: 2px;
+  }
+}
+
+/* دون 1201px لا يتّسع جدول 7–8 أعمدة، فيتحول إلى بطاقات مكدّسة.
+   لا تمرير أفقي عند أي عرض. */
+@media (max-width: 1200px) {
+  #app .requests-surface .surface-header:has(.search-box) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #app .requests-surface .surface-header > h2 {
+    grid-column: 1 / -1;
+  }
+
+  #app :is(.requests-table-wrap, .table-wrap) {
+    overflow-x: visible;
+  }
+
+  #app .data-table thead {
+    display: none;
+  }
+
+  #app :is(.data-table, .data-table tbody, .data-table tr, .data-table td) {
+    display: block;
+    width: 100%;
+  }
+
+  #app .data-table tr {
+    padding: var(--gap-4);
+    border-top: 1px solid var(--line);
+  }
+
+  #app .data-table tbody tr:first-child,
+  #app .data-table tbody tr:first-child td {
+    border-top: 0;
+  }
+
+  #app .data-table td {
+    padding: 4px 0;
+    border: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--gap-2);
+  }
+
+  #app .data-table td::before {
+    content: attr(data-label);
+    flex: 0 0 106px;
+    color: var(--muted-2);
+    font-size: .79rem;
+    font-weight: 500;
+  }
+
+  #app .data-table td:is(.request-title, .row-actions-cell) {
+    display: block;
+  }
+
+  #app .data-table td:is(.request-title, .row-actions-cell)::before {
+    display: none;
+  }
+
+  #app .data-table td.request-title {
+    padding-bottom: var(--gap-2);
+  }
+
+  #app .row-actions,
+  #app .requests-table .row-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    width: auto;
+    min-width: 0;
+    margin-top: var(--gap-3);
+  }
+
+  #app .row-actions .button {
+    flex: 1 1 auto;
+  }
+
+
+  #app .detail-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #app .chat-message {
+    max-width: 80%;
+  }
+}
+
+@media (max-width: 680px) {
+  :root {
+    --shell-gutter: 28px;
+    /* ليست auto: القيمة تُستعمل داخل calc() في min-height لإطار الصفحة */
+    --topbar-h: 104px;
+  }
+
+  body.iu-portal {
+    line-height: 1.7;
+  }
+
+  #topbar .topbar-inner {
+    width: 100%;
+    min-height: auto;
+    padding: var(--gap-2) var(--gap-3) 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand actions"
+      "nav   nav";
+    gap: var(--gap-2) var(--gap-3);
+  }
+
+  #topbar .brand {
+    grid-area: brand;
+    padding-bottom: 6px;
+    align-self: center;
+  }
+
+  #topbar .brand-logo {
+    height: 38px;
+    max-width: 120px;
+  }
+
+  #topbar .brand-text small {
+    display: none;
+  }
+
+  #topbar .nav-actions {
+    grid-area: actions;
+    padding-bottom: 6px;
+    align-self: center;
+  }
+
+  #topbar .main-nav {
+    grid-area: nav;
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  #topbar .nav-link {
+    min-height: 44px;
+    padding-inline: 10px;
+    flex: 1 1 0;
+    font-size: .9rem;
+  }
+
+  #topbar .nav-link::after {
+    inset-inline: 6px;
+  }
+
+  #topbar .notifications-panel {
+    position: fixed;
+    inset-block-start: 108px;
+    inset-inline: 12px;
+    width: auto;
+    max-height: calc(100vh - 128px);
+  }
+
+  #topbar .notification-list {
+    max-height: calc(100vh - 182px);
+  }
+
+  .page-shell,
+  #app {
+    padding-block: var(--gap-6) 56px;
+  }
+
+  #app .page-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--gap-3);
+  }
+
+  #app .page-head .button {
+    width: 100%;
+  }
+
+  #app .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  #app .stat-card {
+    min-height: 0;
+    padding: var(--gap-3) var(--gap-4);
+    gap: 0;
+  }
+
+  #app .stat-card .stat-icon {
+    display: none;
+  }
+
+  #app .stat-card strong {
+    font-size: 1.55rem;
+  }
+
+  #app .stat-card > div > span {
+    font-size: .81rem;
+  }
+
+  #app .button.small {
+    min-height: var(--h-md);
+    padding: 8px 14px;
+    font-size: .89rem;
+  }
+
+  #app .filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #app .filters .field-control {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #app .requests-surface .surface-header:has(.search-box) {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  #app .requests-surface .surface-header > h2 {
+    grid-column: auto;
+  }
+
+  #app .surface-header {
+    min-height: 0;
+    padding: var(--gap-4);
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--gap-3);
+  }
+
+  #app .requests-surface .surface-header:has(.search-box) {
+    display: grid;
+  }
+
+  #app :is(.surface-body, .content-section) {
+    padding: var(--gap-4);
+  }
+
+  #app .form-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  #app .form-actions-group {
+    width: 100%;
+  }
+
+  #app .form-actions .button {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+  }
+
+  #app .detail-hero {
+    padding: var(--gap-5) var(--gap-4);
+  }
+
+  #app .detail-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap-3) var(--gap-4);
+  }
+
+
+  #app .ticket-progress {
+    padding: var(--gap-3) var(--gap-4);
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  #app .ticket-stage {
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--gap-3);
+    padding-block: 7px;
+    text-align: start;
+  }
+
+  /* الخط يصير رأسيًا بدل أن يختفي، فيبقى الشريط مسارًا متصلًا */
+  #app .ticket-stage:not(:last-child)::after {
+    display: block;
+    inset-block-start: 33px;
+    inset-block-end: -7px;
+    inset-inline-start: 12px;
+    inset-inline-end: auto;
+    width: 2px;
+    height: auto;
+  }
+
+  #app .ticket-stage-label {
+    justify-content: flex-start;
+    white-space: normal;
+  }
+
+  #app .ticket-stage-marker {
+    box-shadow: none;
+  }
+
+  #app .chat-body {
+    min-height: 220px;
+    padding: var(--gap-4);
+  }
+
+  #app .chat-message {
+    max-width: 88%;
+  }
+
+  #app .chat-composer {
+    grid-template-columns: 44px minmax(0, 1fr) 48px;
+    padding: 10px;
+  }
+
+  #app :is(.chat-attach, .chat-send) {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  #app :is(.chat-attach, .chat-send) .button-label {
+    display: none;
+  }
+
+  #toast {
+    inset-block-start: 12px;
+    inset-inline: 12px;
+    min-width: 0;
+    max-width: none;
+    width: auto;
+    padding: var(--gap-3) var(--gap-4);
+  }
+
+  .portal-entry .entry-card {
+    padding: var(--gap-7) var(--gap-5);
+  }
+
+  .portal-entry .entry-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  :root {
+    --shell-gutter: 20px;
+  }
+
+  .page-shell,
+  #app {
+    padding-block: var(--gap-5) var(--gap-8);
+  }
+
+  #app :is(.surface-header, .surface-body, .content-section) {
+    padding: var(--gap-3) var(--gap-4);
+  }
+
+  #app .form-actions-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #app .form-actions-group .button {
+    width: 100%;
+    padding-inline: 10px;
+  }
+
+  #app .data-table td {
+    flex-wrap: wrap;
+  }
+
+  #app .data-table td::before {
+    flex-basis: 84px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(#topbar, #app, #toast, .portal-entry) *,
+  :is(#topbar, #app, #toast, .portal-entry) *::before,
+  :is(#topbar, #app, #toast, .portal-entry) *::after {
+    animation-duration: .001ms;
+    animation-iteration-count: 1;
+    transition-duration: .001ms;
+    scroll-behavior: auto;
+  }
+
+  #app .stat-card:hover,
+  .portal-entry .entry-option:hover {
+    transform: none;
+  }
+}
+
+/* =========================================================
+   خاص بواجهة مسؤول الدعم فقط — support.css
+   كل ما فوق هذا السطر مطابق حرفيًا لما في employee.css
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   S1. أعمدة جدول لوحة الدعم (٨ أعمدة)
+--------------------------------------------------------- */
+#app .support-requests-table .col-number { width: 11%; }
+#app .support-requests-table .col-request { width: 28%; }
+#app .support-requests-table .col-requester { width: 11%; }
+#app .support-requests-table .col-department { width: 9%; }
+#app .support-requests-table .col-status { width: 15%; }
+#app .support-requests-table .col-assignee { width: 12%; }
+#app .support-requests-table .col-priority { width: 8%; }
+#app .support-requests-table .col-action { width: 7%; }
+
+@media (min-width: 1201px) {
+  #app .support-requests-table :is(th, td) {
+    padding-inline: var(--gap-3);
+  }
+
+  #app .support-requests-table th:nth-child(5),
+  #app .support-requests-table th:nth-child(7),
+  #app .performance-history th:nth-child(3),
+  #app .performance-history th:nth-child(4) {
+    text-align: center;
+  }
+}
+
+/* ---------------------------------------------------------
+   S2. مؤشرات سجل الإنجاز
+--------------------------------------------------------- */
+#app .performance-grid {
+  margin-bottom: var(--gap-6);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-3);
+}
+
+#app .performance-grid .stat-card strong bdi {
+  font-variant-numeric: tabular-nums;
+}
+
+#app .performance-history {
+  margin-top: var(--gap-6);
+}
+
+#app .performance-history .request-title small {
+  display: block;
+  margin-top: 2px;
+  color: var(--gold-ink);
+  font-size: .82rem;
+  font-weight: 600;
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+/* ---------------------------------------------------------
+   S3. التقييم داخل سجل الإنجاز
+--------------------------------------------------------- */
+#app .rating-summary {
+  min-height: var(--h-sm);
+  padding: 4px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--white);
+  color: var(--navy-deep);
+  font: inherit;
+  font-size: .87rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 140ms var(--ease), background 140ms var(--ease);
+}
+
+#app .rating-summary:hover,
+#app .rating-summary[aria-expanded="true"] {
+  border-color: var(--iu-gold);
+  background: var(--gold-tint);
+}
+
+#app .rating-star {
+  color: var(--gold-ink);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+#app .rating-comment-row td {
+  padding-top: 0;
+  border-top: 0;
+}
+
+#app .rating-comment-box {
+  padding: var(--gap-3) var(--gap-4);
+  border: 1px solid var(--gold-line);
+  border-radius: var(--r-md);
+  background: var(--gold-tint);
+}
+
+#app .rating-comment-box strong {
+  color: var(--navy-deep);
+  font-size: .89rem;
+  font-weight: 600;
+}
+
+#app .rating-comment-box p {
+  margin-top: 5px;
+  color: var(--ink-2);
+  font-size: .92rem;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1200px) {
+  #app .support-requests-table :is(th, td) {
+    padding-inline: 0;
+  }
+
+  #app .performance-history .data-table td::before {
+    flex-basis: 106px;
+  }
+
+  /* صف تعليق التقييم يتحول إلى بطاقة كبقية الصفوف */
+  #app .rating-comment-row td {
+    padding: 0;
+  }
+
+  #app .rating-comment-row td::before {
+    display: none;
+  }
+}
+
+@media (max-width: 680px) {
+  #app .performance-grid {
+    grid-template-columns: 1fr;
+  }
+}
+#app .detail-status-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+#app .sla-badge {
+  width: max-content;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 3px 9px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-pill);
+  font-size: .76rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+#app .sla-badge-safe {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+#app .sla-badge-warning {
+  background: var(--gold-tint);
+  color: var(--gold-ink);
+}
+
+#app .sla-badge-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+#app .sla-badge-success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+#app .sla-badge-paused {
+  background: var(--navy-tint);
+  color: var(--iu-navy);
+}
+
+/* 
+   تفاصيل الطلب بدون مساطر
+    */
+
+#app .detail-kicker {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+#app .detail-meta {
+  padding-top: 0;
+  border-top: 0;
+}
+
+#app .ticket-progress {
+  border-top: 0;
+}
+
+#app .content-section + .content-section {
+  border-top: 0;
+}
+
+#app .solution-meta {
+  border-top: 0;
+}
+
+/* 
+   Platform Analytics
+    */
+
+#app .platform-analytics {
+  margin-bottom: var(--gap-6);
+}
+
+#app .performance-section-head {
+  margin-bottom: var(--gap-3);
+}
+
+#app .performance-section-head h2 {
+  color: var(--navy-deep);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+#app .platform-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    2,
+    minmax(0, 1fr)
+  );
+  gap: var(--gap-4);
+}
+
+#app .analytics-card {
+  min-width: 0;
+  padding: var(--gap-5);
+  border-radius: var(--r-lg);
+  background: var(--white);
+  box-shadow: var(--sh-1);
+}
+
+#app .analytics-card-wide {
+  grid-column: 1 / -1;
+}
+
+#app .analytics-card-head {
+  margin-bottom: var(--gap-5);
+}
+
+#app .analytics-card-head h3 {
+  margin: 0;
+  color: var(--navy-deep);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+#app .analytics-card-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+
+/* Doughnut */
+
+#app .sla-donut-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-7);
+  min-height: 230px;
+}
+
+#app .sla-donut {
+  width: 150px;
+  height: 150px;
+  flex: 0 0 150px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+
+  background:
+    conic-gradient(
+      var(--success)
+      calc(
+        var(--sla-value) * 1%
+      ),
+      #e7ebef 0
+    );
+}
+
+#app .sla-donut::before {
+  content: "";
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  background: var(--white);
+}
+
+#app .sla-donut-center {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#app .sla-donut {
+  position: relative;
+}
+
+#app .sla-donut-center strong {
+  color: var(--navy-deep);
+  font-size: 1.55rem;
+  font-weight: 700;
+}
+
+#app .sla-donut-center span {
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+#app .sla-donut-legend {
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#app .sla-donut-legend > div {
+  display: grid;
+  grid-template-columns:
+    10px
+    minmax(0, 1fr)
+    auto;
+  align-items: center;
+  gap: 8px;
+}
+
+#app .sla-donut-legend span {
+  color: var(--muted);
+  font-size: .84rem;
+}
+
+#app .sla-donut-legend strong {
+  color: var(--navy-deep);
+  font-size: .9rem;
+  font-weight: 700;
+}
+
+#app .legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+#app .legend-dot.is-success {
+  background: var(--success);
+}
+
+#app .legend-dot.is-failed {
+  background: var(--danger);
+}
+
+
+/* Bar */
+
+#app .sla-bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
+}
+
+#app .sla-bar-row {
+  display: grid;
+  grid-template-columns:
+    110px
+    minmax(0, 1fr);
+  align-items: center;
+  gap: var(--gap-4);
+}
+
+#app .sla-bar-label {
+  color: var(--ink-2);
+  font-size: .84rem;
+  font-weight: 600;
+}
+
+#app .sla-bar-values {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+#app .sla-bar-line {
+  display: grid;
+  grid-template-columns:
+    52px
+    minmax(0, 1fr)
+    24px;
+  align-items: center;
+  gap: 8px;
+}
+
+#app .sla-bar-line > span {
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+#app .sla-bar-line > strong {
+  color: var(--ink-2);
+  font-size: .78rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+#app .sla-bar-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: #edf0f3;
+}
+
+#app .sla-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+#app .sla-bar-fill.is-success {
+  background: var(--success);
+}
+
+#app .sla-bar-fill.is-failed {
+  background: var(--danger);
+}
+
+
+/* Line */
+
+#app .sla-line-chart {
+  min-width: 0;
+}
+
+#app .sla-line-chart svg {
+  width: 100%;
+  height: 190px;
+  overflow: visible;
+}
+
+#app .sla-line-path {
+  fill: none;
+  stroke: var(--iu-teal);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#app .sla-line-point {
+  fill: var(--white);
+  stroke: var(--iu-teal);
+  stroke-width: 3;
+}
+
+#app .sla-line-labels {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns:
+    repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+#app .sla-line-labels span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+#app .sla-line-labels small {
+  color: var(--muted);
+  font-size: .73rem;
+}
+
+#app .sla-line-labels strong {
+  color: var(--navy-deep);
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+
+#app .analytics-empty {
+  padding: var(--gap-7);
+  text-align: center;
+  color: var(--muted);
+  font-size: .88rem;
+}
+
+
+@media (max-width: 900px) {
+
+  #app .platform-charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #app .analytics-card-wide {
+    grid-column: auto;
+  }
+
+}
+
+
+@media (max-width: 680px) {
+
+  #app .sla-donut-wrap {
+    flex-direction: column;
+    gap: var(--gap-5);
+  }
+
+  #app .sla-bar-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  #app .sla-line-chart svg {
+    height: 160px;
+  }
+
+}

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <template id="employee" name="طلبات الموظف">
+    <t t-call="website.layout">
+
+      <t t-set="additional_title">
+        طلبات الموظف | منصة الدعم الفني
+      </t>
+
+
+      <link rel="stylesheet"
+            href="/website/static/src/css/employee.css"/>
+
+      <main id="wrap" dir="rtl" lang="ar">
+        <header id="topbar"></header>
+
+        <div id="app"
+             class="page-shell"
+             t-att-data-user-name="current_user_name"
+             t-att-data-department="current_department"
+            data-brand-logo="/website/static/src/img/logo-mark-color.png">
+        </div>
+
+    <div
+    id="toast"
+    class="employee-toast"
+    role="status"
+    aria-live="polite"
+    hidden="hidden">
+</div>
+      </main>
+
+    </t>
+  </template>
+</odoo>

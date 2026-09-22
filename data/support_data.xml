@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ترقيم طلبات الدعم -->
+    <data noupdate="1">
+
+        <record id="seq_support_ticket" model="ir.sequence">
+            <field name="name">Support Ticket</field>
+            <field name="code">support.ticket</field>
+            <field name="prefix">REQ-</field>
+            <field name="padding">4</field>
+        </record>
+
+    </data>
+
+
+    <!-- تصنيفات الطلب -->
+    <data>
+
+        <record id="support_category_technical" model="support.category">
+            <field name="name">مشكلة تقنية</field>
+        </record>
+
+        <record id="support_category_service" model="support.category">
+            <field name="name">طلب خدمة</field>
+        </record>
+
+        <record id="support_category_consultation" model="support.category">
+            <field name="name">استفسار / استشارة</field>
+        </record>
+
+    </data>
+
+</odoo>

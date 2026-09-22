@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<odoo>
+
+    <record id="group_support_employee" model="res.groups">
+        <field name="name">موظف منصة الدعم</field>
+
+        <field name="implied_ids"
+               eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+    <record id="group_support_manager" model="res.groups">
+        <field name="name">مسؤول الدعم الفني</field>
+
+        <field name="implied_ids"
+               eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+
+    <record id="rule_support_ticket_employee" model="ir.rule">
+
+        <field name="name">
+            Employee - Own Support Tickets
+        </field>
+
+        <field name="model_id"
+               ref="model_support_ticket"/>
+
+        <field name="groups"
+               eval="[
+                   (4, ref('website.group_support_employee'))
+               ]"/>
+
+        <!--
+        الموظف لا يستطيع رؤية طلب موظف آخر
+        -->
+        <field name="domain_force">
+            [('requester_id', '=', user.id)]
+        </field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+
+    </record>
+
+    <record id="rule_support_ticket_manager" model="ir.rule">
+
+        <field name="name">
+            Support - Submitted Tickets
+        </field>
+
+        <field name="model_id"
+               ref="model_support_ticket"/>
+
+        <field name="groups"
+               eval="[
+                   (4, ref('website.group_support_manager'))
+               ]"/>
+
+        <field name="domain_force">
+            [('status', '!=', 'draft')]
+        </field>
+
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+
+    </record>
+
+
+    <record id="rule_support_history_employee" model="ir.rule">
+
+        <field name="name">
+            Employee - Own Ticket History
+        </field>
+
+        <field name="model_id"
+               ref="model_support_ticket_history"/>
+
+        <field name="groups"
+               eval="[
+                   (4, ref('website.group_support_employee'))
+               ]"/>
+
+        <field name="domain_force">
+            [('ticket_id.requester_id', '=', user.id)]
+        </field>
+
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+
+    </record>
+
+
+    <!-- مسؤول الدعم يرى سجل الطلبات المرسلة -->
+    <record id="rule_support_history_manager" model="ir.rule">
+
+        <field name="name">
+            Support - Ticket History
+        </field>
+
+        <field name="model_id"
+               ref="model_support_ticket_history"/>
+
+        <field name="groups"
+               eval="[
+                   (4, ref('website.group_support_manager'))
+               ]"/>
+
+        <field name="domain_force">
+            [('ticket_id.status', '!=', 'draft')]
+        </field>
+
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+
+    </record>
+
+    <record id="rule_support_rating_employee" model="ir.rule">
+
+        <field name="name">
+            Employee - Own Ratings
+        </field>
+
+        <field name="model_id"
+               ref="model_support_rating"/>
+
+        <field name="groups"
+               eval="[
+                   (4, ref('website.group_support_employee'))
+               ]"/>
+
+        <field name="domain_force">
+            [('ticket_id.requester_id', '=', user.id)]
+        </field>
+
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+
+    </record>
+
+
+    <!-- مسؤول الدعم يرى تقييمات الطلبات -->
+    <record id="rule_support_rating_manager" model="ir.rule">
+
+        <field name="name">
+            Support - Ratings
+        </field>
+
+        <field name="model_id"
+               ref="model_support_rating"/>
+
+        <field name="groups"
+               eval="[
+                   (4, ref('website.group_support_manager'))
+               ]"/>
+
+        <field name="domain_force">
+            [('ticket_id.status', '!=', 'draft')]
+        </field>
+
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+
+    </record>
+
+</odoo>

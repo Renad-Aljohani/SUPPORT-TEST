@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <template id="support" name="لوحة الدعم الفني">
+    <t t-call="website.layout">
+
+      <t t-set="additional_title">
+        لوحة الدعم الفني | منصة الدعم الفني
+      </t>
+
+      <link rel="preconnect"
+            href="https://fonts.googleapis.com"/>
+
+      <link rel="preconnect"
+            href="https://fonts.gstatic.com"
+            crossorigin="anonymous"/>
+
+   
+
+      <link rel="stylesheet"
+            href="/website/static/src/css/support.css"/>
+
+      <main id="wrap" dir="rtl" lang="ar">
+
+        <header id="topbar"></header>
+
+           <div
+          id="app"
+          class="page-shell"
+          tabindex="-1"
+          t-att-data-support-name="current_support_name"
+          t-att-data-support-id="current_support_id"
+          data-brand-logo="/website/static/src/img/logo-mark-color.png">
+        
+        </div>
+
+        <div
+          id="toast"
+          class="toast"
+          role="status"
+          aria-live="polite"
+          hidden="hidden">
+        </div>
+
+      </main>
+
+    </t>
+  </template>
+</odoo>

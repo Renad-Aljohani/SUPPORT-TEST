@@ -1,0 +1,102 @@
+<odoo>
+
+    <!-- استفسار -->
+
+    <record id="sla_inquiry_medium" model="support.sla.policy">
+        <field name="name">استفسار - متوسطة</field>
+        <field name="category_id" ref="support_category_inquiry"/>
+        <field name="priority">medium</field>
+        <field name="response_hours">1</field>
+        <field name="resolution_hours">4</field>
+    </record>
+
+    <record id="sla_inquiry_low" model="support.sla.policy">
+        <field name="name">استفسار - منخفضة</field>
+        <field name="category_id" ref="support_category_inquiry"/>
+        <field name="priority">low</field>
+        <field name="response_hours">2</field>
+        <field name="resolution_hours">8</field>
+    </record>
+
+
+    <!-- مشكلة تقنية -->
+
+    <record id="sla_technical_high" model="support.sla.policy">
+        <field name="name">مشكلة تقنية - عالية</field>
+        <field name="category_id" ref="support_category_technical"/>
+        <field name="priority">high</field>
+        <field name="response_hours">1</field>
+        <field name="resolution_hours">4</field>
+    </record>
+
+    <record id="sla_technical_medium" model="support.sla.policy">
+        <field name="name">مشكلة تقنية - متوسطة</field>
+        <field name="category_id" ref="support_category_technical"/>
+        <field name="priority">medium</field>
+        <field name="response_hours">2</field>
+        <field name="resolution_hours">8</field>
+    </record>
+
+    <record id="sla_technical_low" model="support.sla.policy">
+        <field name="name">مشكلة تقنية - منخفضة</field>
+        <field name="category_id" ref="support_category_technical"/>
+        <field name="priority">low</field>
+        <field name="response_hours">4</field>
+        <field name="resolution_hours">16</field>
+    </record>
+
+
+    <!-- طلب خدمة -->
+
+    <record id="sla_service_high" model="support.sla.policy">
+        <field name="name">طلب خدمة - عالية</field>
+        <field name="category_id" ref="support_category_service"/>
+        <field name="priority">high</field>
+        <field name="response_hours">2</field>
+        <field name="resolution_hours">8</field>
+    </record>
+
+    <record id="sla_service_medium" model="support.sla.policy">
+        <field name="name">طلب خدمة - متوسطة</field>
+        <field name="category_id" ref="support_category_service"/>
+        <field name="priority">medium</field>
+        <field name="response_hours">4</field>
+        <field name="resolution_hours">16</field>
+    </record>
+
+    <record id="sla_service_low" model="support.sla.policy">
+        <field name="name">طلب خدمة - منخفضة</field>
+        <field name="category_id" ref="support_category_service"/>
+        <field name="priority">low</field>
+        <field name="response_hours">8</field>
+        <field name="resolution_hours">24</field>
+    </record>
+
+
+    <!-- جمع متطلبات -->
+
+    <record id="sla_requirements_high" model="support.sla.policy">
+        <field name="name">جمع متطلبات - عالية</field>
+        <field name="category_id" ref="support_category_requirements"/>
+        <field name="priority">high</field>
+        <field name="response_hours">4</field>
+        <field name="resolution_hours">16</field>
+    </record>
+
+    <record id="sla_requirements_medium" model="support.sla.policy">
+        <field name="name">جمع متطلبات - متوسطة</field>
+        <field name="category_id" ref="support_category_requirements"/>
+        <field name="priority">medium</field>
+        <field name="response_hours">8</field>
+        <field name="resolution_hours">24</field>
+    </record>
+
+    <record id="sla_requirements_low" model="support.sla.policy">
+        <field name="name">جمع متطلبات - منخفضة</field>
+        <field name="category_id" ref="support_category_requirements"/>
+        <field name="priority">low</field>
+        <field name="response_hours">8</field>
+        <field name="resolution_hours">40</field>
+    </record>
+
+</odoo>
