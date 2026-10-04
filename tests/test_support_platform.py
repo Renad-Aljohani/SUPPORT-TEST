@@ -199,6 +199,11 @@ class TestSupportSLA(SupportQACommon):
         self.assertEqual(t.sla_response_status, 'failed')
         self.assertEqual(t.sla_response_alert_level, 100)
 
+    def test_13_module_declares_hr_dependency(self):
+        website = self.env['ir.module.module'].search([('name', '=', 'website')])
+        self.assertIn('hr', website.dependencies_id.mapped('name'),
+                      'support.ticket uses hr.department / hr.employee but website does not depend on hr')
+
     def test_12_sla_cron_is_scheduled(self):
         """FR-SYS-18/19: breach detection and near-breach alerts must run automatically."""
         crons = self.env['ir.cron'].sudo().with_context(active_test=False).search([
@@ -271,6 +276,31 @@ class TestSupportSecurity(SupportQACommon):
         with self.assertRaises(REJECTED):
             self.env['support.rating'].with_user(self.emp1).create({'ticket_id': t.id, 'rating': '1'})
 
+    def test_11b_rating_rated_by_cannot_be_spoofed(self):
+        t = self._submit('2026-10-04 06:00:00')
+        self._claim(t, '2026-10-04 06:30:00')
+        self._solve(t, '2026-10-04 07:00:00')
+        t.sudo().write({'status': 'closed', 'closed_at': fields.Datetime.now()})
+        with self.assertRaises(REJECTED):
+            self.env['support.rating'].with_user(self.emp1).create({'ticket_id': t.id, 'rating': '5', 'rated_by': self.mgr1.id})
+
+    def test_11c_employee_cannot_rpc_create_submitted_ticket(self):
+        with self.assertRaises(REJECTED):
+            self.env['support.ticket'].with_user(self.emp1).create({
+                'title': 'x', 'description': 'y', 'category_id': self.cat_tech.id, 'priority': 'low',
+                'status': 'new', 'ticket_number': 'REQ-FAKE', 'submitted_at': fields.Datetime.now()})
+
+    def test_11d_employee_can_still_edit_own_draft(self):
+        d = self.env['support.ticket'].with_user(self.emp1).create({'title': 'draft', 'status': 'draft', 'requester_id': self.emp1.id})
+        d.with_user(self.emp1).write({'title': 'draft 2', 'description': 'desc', 'priority': 'low', 'status': 'draft', 'requester_id': self.emp1.id})
+        self.assertEqual(d.title, 'draft 2')
+
+    def test_11e_other_manager_cannot_hold(self):
+        t = self._submit('2026-10-04 06:00:00')
+        self._claim(t, '2026-10-04 06:30:00', mgr=self.mgr1)
+        with self.assertRaises(REJECTED):
+            t.with_user(self.mgr2).pause_resolution_sla('waiting_employee')
+
     def test_12_rating_unique(self):
         t = self._submit('2026-10-04 06:00:00')
         self._claim(t, '2026-10-04 06:30:00')
@@ -327,3 +357,36 @@ class TestSupportHttp(HttpCase):
     def test_03_employee_without_email_can_create(self):
         r = self._create('qa_h_noemail', 'qa_h_noemail_pwd_1')
         self.assertEqual(r.status_code, 200, r.text[:200])
+
+    def _json(self, login, password, path, payload):
+        self.authenticate(login, password)
+        token = json.loads(self.url_open('/support/csrf').text)['csrf_token']
+        return self.url_open(f'{path}?csrf_token={token}', data=json.dumps(payload),
+                             headers={'Content-Type': 'application/json'})
+
+    def test_04_full_lifecycle_via_endpoints(self):
+        r = self._create('qa_h_emp', 'qa_h_emp_pwd_1')
+        number = r.json()['ticket_number']
+        mgr = ('qa_h_mgr', 'qa_h_mgr')
+        emp = ('qa_h_emp', 'qa_h_emp_pwd_1')
+        steps = [
+            (mgr, '/support/ticket/claim', {'ticket_number': number}, 'processing'),
+            (mgr, '/support/ticket/hold', {'ticket_number': number, 'reason': 'waiting_employee'}, 'on_hold'),
+            (mgr, '/support/ticket/resume', {'ticket_number': number}, 'processing'),
+            (mgr, '/support/ticket/solution', {'ticket_number': number, 'solution': 'حل'}, 'waiting_confirmation'),
+            (emp, '/support/ticket/employee-action', {'ticket_number': number, 'action': 'reopen'}, 'processing'),
+            (mgr, '/support/ticket/solution', {'ticket_number': number, 'solution': 'حل نهائي'}, 'waiting_confirmation'),
+            (emp, '/support/ticket/employee-action', {'ticket_number': number, 'action': 'confirm'}, 'closed'),
+        ]
+        ticket = self.env['support.ticket'].sudo().search([('ticket_number', '=', number)])
+        for (login, pwd), path, payload, expected in steps:
+            res = self._json(login, pwd, path, payload)
+            self.assertEqual(res.status_code, 200, f'{path}: {res.text[:200]}')
+            ticket.invalidate_recordset()
+            self.assertEqual(ticket.status, expected, path)
+        res = self._json(*emp, '/support/ticket/rating', {'ticket_number': number, 'rating': 5})
+        self.assertEqual(res.status_code, 200, res.text[:200])
+        self.assertEqual(ticket.reopen_count, 1)
+        self.assertEqual(
+            self.env['support.ticket.history'].sudo().search([('ticket_id', '=', ticket.id)], order='id').mapped('action'),
+            ['create', 'claim', 'hold', 'resume', 'solution', 'reopen', 'solution', 'close', 'rating'])
