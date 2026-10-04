@@ -359,6 +359,17 @@ class TestSupportSecurity(SupportQACommon):
         with self.assertRaises(REJECTED):
             t.with_user(self.mgr2).pause_resolution_sla('waiting_employee')
 
+    def test_11f_access_layers_are_native(self):
+        """DEF-01/02 defence in depth: ACL + ir.rule, not only Python checks."""
+        Ticket = self.env['support.ticket']
+        self.assertFalse(Ticket.with_user(self.mgr1).check_access_rights('write', raise_exception=False),
+                         'support managers must not have direct write ACL on tickets')
+        t = self._submit('2026-10-04 06:00:00')
+        with self.assertRaises(AccessError):
+            t.with_user(self.emp1).check_access_rule('write')
+        d = Ticket.with_user(self.emp1).create({'title': 'draft', 'status': 'draft'})
+        d.with_user(self.emp1).check_access_rule('write')   # own draft stays writable
+
     def test_12_rating_unique(self):
         t = self._submit('2026-10-04 06:00:00')
         self._claim(t, '2026-10-04 06:30:00')
