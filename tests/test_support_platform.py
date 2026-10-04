@@ -632,3 +632,85 @@ class TestSupportControllerContract(TransactionCase):
 
         with self.assertRaises(psycopg2.OperationalError):
             wrapper(endpoint)(None)
+
+
+@tagged('post_install', '-at_install', 'support_qa')
+class TestSupportDecisions(SupportQACommon):
+    """Owner decisions of 2026-10-05 (DN-01, DN-02)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.outsider = new_test_user(cls.env, 'qa_t_outsider', groups='base.group_user', email='qa_t_outsider@example.test')
+        Emp = cls.env['hr.employee']
+        cls.emp1_record = Emp.create({'name': 'QA emp1', 'user_id': cls.emp1.id})
+        cls.emp2_record = Emp.create({'name': 'QA emp2', 'user_id': cls.emp2.id})
+
+    def test_01_dn01_manager_can_edit_sla_policy(self):
+        pol = self.env['support.sla.policy'].search([], limit=1)
+        pol.with_user(self.mgr1).write({'response_hours': pol.response_hours})
+
+    def test_02_dn02_employee_sees_only_self_and_managers(self):
+        visible = self.env['res.users'].with_user(self.emp1).search([])
+        self.assertIn(self.emp1, visible)
+        self.assertIn(self.mgr1, visible)
+        self.assertNotIn(self.emp2, visible, 'another employee is exposed')
+        self.assertNotIn(self.outsider, visible, 'a non-platform internal user is exposed')
+
+    def test_03_dn02_manager_sees_platform_users_only(self):
+        visible = self.env['res.users'].with_user(self.mgr1).search([])
+        self.assertTrue({self.emp1, self.emp2, self.mgr2} <= set(visible))
+        self.assertNotIn(self.outsider, visible)
+
+    def test_04_dn02_admin_still_sees_all_users(self):
+        admin = self.env.ref('base.user_admin')
+        self.assertIn(self.outsider, self.env['res.users'].with_user(admin).search([]))
+
+    def test_05_dn02_employee_directory_own_record_only(self):
+        visible = self.env['hr.employee.public'].with_user(self.emp1).search([])
+        self.assertEqual(visible.ids, [self.emp1_record.id])
+
+    def test_06_dn02_platform_can_still_read_names(self):
+        t = self._submit('2026-10-04 06:00:00')
+        self._claim(t, '2026-10-04 06:30:00')
+        self.assertEqual(t.with_user(self.emp1).assignee_id.name, self.mgr1.name)
+        self.assertEqual(t.with_user(self.mgr1).requester_id.name, self.emp1.name)
+
+
+@tagged('post_install', '-at_install', 'support_qa')
+class TestSupportNotifications(HttpCase):
+    """DN-03: in-platform notifications only - no e-mail is generated."""
+
+    def test_01_lifecycle_generates_no_email_but_inbox_notifications(self):
+        emp = new_test_user(self.env, 'qa_n_emp', groups='base.group_user,website.group_support_employee',
+                            email='qa_n_emp@example.test', password='qa_n_emp_pwd_1')
+        new_test_user(self.env, 'qa_n_mgr', groups='base.group_user,website.group_support_manager',
+                      email='qa_n_mgr@example.test', password='qa_n_mgr_pwd_1')
+        Mail = self.env['mail.mail'].sudo()
+        before = Mail.search_count([('mail_message_id.model', '=', 'support.ticket')])
+
+        def call(login, pwd, path, payload=None, form=None):
+            self.authenticate(login, pwd)
+            token = json.loads(self.url_open('/support/csrf').text)['csrf_token']
+            if form is not None:
+                return self.url_open(path, data=dict(form, csrf_token=token))
+            return self.url_open(f'{path}?csrf_token={token}', data=json.dumps(payload), headers={'Content-Type': 'application/json'})
+
+        r = call('qa_n_emp', 'qa_n_emp_pwd_1', '/support/ticket/create',
+                 form={'title': 'DN-03', 'description': 'd', 'category': 'مشكلة تقنية', 'priority': 'low'})
+        number = r.json()['ticket_number']
+        for login, pwd, path, payload in [
+            ('qa_n_mgr', 'qa_n_mgr_pwd_1', '/support/ticket/claim', {'ticket_number': number}),
+            ('qa_n_mgr', 'qa_n_mgr_pwd_1', '/support/ticket/solution', {'ticket_number': number, 'solution': 'حل'}),
+            ('qa_n_emp', 'qa_n_emp_pwd_1', '/support/ticket/employee-action', {'ticket_number': number, 'action': 'confirm'}),
+            ('qa_n_emp', 'qa_n_emp_pwd_1', '/support/ticket/rating', {'ticket_number': number, 'rating': 5}),
+        ]:
+            self.assertEqual(call(login, pwd, path, payload).status_code, 200, path)
+        self.assertEqual(Mail.search_count([('mail_message_id.model', '=', 'support.ticket')]), before,
+                         'support notifications must not create e-mails (DN-03)')
+        self.authenticate('qa_n_emp', 'qa_n_emp_pwd_1')
+        mine = [n for n in self.url_open('/support/notifications').json()['notifications'] if n['ticket_number'] == number]
+        self.assertGreaterEqual(len(mine), 2, 'requester must still receive in-platform notifications')
+        notif = self.env['mail.notification'].sudo().search([('res_partner_id', '=', emp.partner_id.id),
+                                                              ('mail_message_id.res_id', '=', r.json()['ticket_id'])])
+        self.assertEqual(set(notif.mapped('notification_type')), {'inbox'})
