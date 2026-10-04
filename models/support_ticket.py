@@ -1,3 +1,7 @@
+import bisect
+from collections import defaultdict
+from datetime import timedelta
+
 from pytz import UTC
 from dateutil.relativedelta import relativedelta
 
@@ -659,6 +663,93 @@ class SupportTicket(models.Model):
         self,
         sla_type='resolution'
     ):
+        return self._compute_sla_metrics(sla_type)
+
+    def _sla_work_hours_function(self, calendar, range_start, range_end):
+        """Return ``hours(start, end)`` equal to
+        ``calendar.get_work_hours_count(start, end, compute_leaves=True)``
+        but backed by ONE ``_work_intervals_batch`` call for the whole range
+        (the very intervals get_work_hours_count sums), avoiding N+1 queries
+        when SLA metrics are computed for many tickets.
+        """
+        range_start = self._as_utc(range_start)
+        range_end = self._as_utc(range_end)
+        intervals = [
+            (begin, stop)
+            for begin, stop, _meta in calendar._work_intervals_batch(
+                range_start, range_end
+            )[False]
+        ]
+        starts = [begin for begin, _stop in intervals]
+
+        def hours(start, end):
+            start = self._as_utc(start)
+            end = self._as_utc(end)
+
+            if end <= start:
+                return 0.0
+
+            if start < range_start or end > range_end:
+                return calendar.get_work_hours_count(
+                    start, end, compute_leaves=True
+                )
+
+            total = 0.0
+            index = max(bisect.bisect_right(starts, start) - 1, 0)
+
+            for begin, stop in intervals[index:]:
+                if begin >= end:
+                    break
+                overlap = (min(stop, end) - max(begin, start)).total_seconds()
+                if overlap > 0:
+                    total += overlap / 3600
+
+            return total
+
+        return hours
+
+    def _get_sla_work_hours_map(self):
+        """{calendar: hours_fn} covering every date the tickets may need."""
+        now = self._as_utc(fields.Datetime.now())
+        by_calendar = defaultdict(list)
+
+        for ticket in self:
+            calendar = ticket._get_sla_calendar()
+            if not calendar:
+                continue
+            for value in (
+                ticket.submitted_at, ticket.first_response_at,
+                ticket.solution_at, ticket.sla_pause_started_at,
+                ticket.sla_response_deadline, ticket.sla_resolution_deadline,
+            ):
+                if value:
+                    by_calendar[calendar].append(self._as_utc(value))
+
+        return {
+            calendar: self._sla_work_hours_function(
+                calendar,
+                min(values + [now]) - timedelta(days=1),
+                max(values + [now]) + timedelta(days=1),
+            )
+            for calendar, values in by_calendar.items()
+        }
+
+    def _get_sla_metrics_batch(self):
+        """{ticket_id: {'response': {...}, 'resolution': {...}}} - same values
+        as get_sla_metrics(), with one interval fetch per calendar."""
+        hours_map = self._get_sla_work_hours_map()
+        return {
+            ticket.id: {
+                sla_type: ticket._compute_sla_metrics(
+                    sla_type,
+                    work_hours=hours_map.get(ticket._get_sla_calendar()),
+                )
+                for sla_type in ('response', 'resolution')
+            }
+            for ticket in self
+        }
+
+    def _compute_sla_metrics(self, sla_type='resolution', work_hours=None):
         self.ensure_one()
 
         if sla_type not in {'response', 'resolution'}:
@@ -737,11 +828,13 @@ class SupportTicket(models.Model):
         end_at = self._as_utc(end_at)
         deadline = self._as_utc(deadline)
 
-        used_hours = calendar.get_work_hours_count(
-            start_at,
-            end_at,
-            compute_leaves=True,
-        )
+        if work_hours is None:
+            def work_hours(begin, stop):
+                return calendar.get_work_hours_count(
+                    begin, stop, compute_leaves=True
+                )
+
+        used_hours = work_hours(start_at, end_at)
 
         if sla_type == 'resolution':
             used_hours -= self.sla_paused_hours or 0.0
@@ -753,11 +846,7 @@ class SupportTicket(models.Model):
             0.0
             if is_final
             else max(
-                calendar.get_work_hours_count(
-                    end_at,
-                    deadline,
-                    compute_leaves=True,
-                ),
+                work_hours(end_at, deadline),
                 0.0,
             )
         )
@@ -769,11 +858,7 @@ class SupportTicket(models.Model):
         is_working_time = (
             not is_final
             and self.status != 'on_hold'
-            and calendar.get_work_hours_count(
-                end_at,
-                check_end,
-                compute_leaves=True,
-            ) > 0
+            and work_hours(end_at, check_end) > 0
         )
 
         percent = (

@@ -1973,6 +1973,9 @@ class SupportController(http.Controller):
             attachments_by_ticket,
         ) = self._ticket_related_data(tickets)
 
+        # مقاييس SLA لكل الطلبات بجلب فترات العمل مرة واحدة لكل تقويم (بدل N+1).
+        sla_metrics = tickets._get_sla_metrics_batch()
+
         for ticket in tickets:
 
             rating_record = ratings_by_ticket.get(ticket.id)
@@ -1994,13 +1997,8 @@ class SupportController(http.Controller):
                     )
                 })
 
-            response_sla = ticket.get_sla_metrics(
-                'response'
-            )
-
-            resolution_sla = ticket.get_sla_metrics(
-                'resolution'
-            )
+            response_sla = sla_metrics[ticket.id]['response']
+            resolution_sla = sla_metrics[ticket.id]['resolution']
 
             data.append({
                 'id': ticket.ticket_number,
@@ -2271,6 +2269,8 @@ class SupportController(http.Controller):
         # تحليل الطلبات
         # -------------------------------------------------
 
+        work_hours_by_calendar = tickets._get_sla_work_hours_map()
+
         for ticket in tickets:
 
             calendar = (
@@ -2279,6 +2279,7 @@ class SupportController(http.Controller):
                 or ticket.company_id.resource_calendar_id
                 or request.env.company.resource_calendar_id
             )
+            work_hours = work_hours_by_calendar.get(calendar)
 
             # الشهر الذي ينتمي إليه الطلب
             submitted_local = (
@@ -2385,10 +2386,10 @@ class SupportController(http.Controller):
                 )
 
                 response_time = (
-                    calendar.get_work_hours_count(
-                        start,
-                        end,
-                        compute_leaves=True,
+                    work_hours(start, end)
+                    if work_hours
+                    else calendar.get_work_hours_count(
+                        start, end, compute_leaves=True,
                     )
                 )
 
@@ -2431,10 +2432,10 @@ class SupportController(http.Controller):
                 )
 
                 resolution_time = (
-                    calendar.get_work_hours_count(
-                        start,
-                        end,
-                        compute_leaves=True,
+                    work_hours(start, end)
+                    if work_hours
+                    else calendar.get_work_hours_count(
+                        start, end, compute_leaves=True,
                     )
                 )
 
