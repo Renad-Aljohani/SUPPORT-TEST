@@ -907,7 +907,7 @@ class SupportController(http.Controller):
         )
 
         if support_partners:
-            message = ticket.sudo().message_post(
+            message = ticket._support_notify(
                 subject='طلب دعم جديد',
                 body=(
                     f'تم إنشاء طلب دعم جديد '
@@ -1368,7 +1368,7 @@ class SupportController(http.Controller):
             'partner_id'
         )
         if support_partners:
-            message = draft.sudo().message_post(
+            message = draft._support_notify(
                 subject='طلب دعم جديد',
                 body=(
                     f'تم إنشاء طلب دعم جديد '
@@ -1856,7 +1856,7 @@ class SupportController(http.Controller):
             ticket.requester_id.partner_id
         )       
 
-        message = ticket.sudo().message_post(
+        message = ticket._support_notify(
             subject='تم استلام طلبك',
             body=(
                 f'تم استلام الطلب '
@@ -2821,7 +2821,7 @@ class SupportController(http.Controller):
             note='تم إرسال الحل'
         )
 
-        message = ticket.sudo().message_post(
+        message = ticket._support_notify(
             subject='تم إرسال حل للطلب',
             body=(
                 f'تم إرسال حل للطلب '
@@ -2959,7 +2959,7 @@ class SupportController(http.Controller):
             if ticket.assignee_id:
                 partner = ticket.assignee_id.partner_id
 
-                message = ticket.sudo().message_post(
+                message = ticket._support_notify(
                     subject='تم إغلاق الطلب',
                     body=(
                         f'تم تأكيد الحل وإغلاق الطلب '
@@ -3017,7 +3017,7 @@ class SupportController(http.Controller):
             if ticket.assignee_id:
                 partner = ticket.assignee_id.partner_id
 
-                message = ticket.sudo().message_post(
+                message = ticket._support_notify(
                     subject='تمت إعادة فتح الطلب',
                     body=(
                         f'تمت إعادة فتح الطلب '
@@ -3183,7 +3183,7 @@ class SupportController(http.Controller):
         if ticket.assignee_id:
             partner = ticket.assignee_id.partner_id
 
-            message = ticket.sudo().message_post(
+            message = ticket._support_notify(
                 subject='تم تقييم الخدمة',
                 body=(
                     f'تم تقييم الطلب '

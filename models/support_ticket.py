@@ -6,6 +6,7 @@ from pytz import UTC
 from dateutil.relativedelta import relativedelta
 
 from odoo import models, fields, api
+from odoo.tools import plaintext2html
 from odoo.exceptions import AccessError, ValidationError
 
 
@@ -884,6 +885,37 @@ class SupportTicket(models.Model):
             'is_working_time': is_working_time,
         }
     
+    def _support_notify(self, subject, body, partner_ids, message_type='notification'):
+        """DN-03: in-platform notification only (bell / Discuss inbox).
+
+        Same arguments as the message_post() calls it replaces, but the
+        notification is created with notification_type='inbox' for every
+        recipient, so no mail.mail / e-mail is generated whatever the user's
+        notification preference is. Called after the role/ownership checks.
+        """
+        self.ensure_one()
+        partners = self.env['res.partner'].sudo().browse(
+            partner_ids.ids if hasattr(partner_ids, 'ids') else list(partner_ids or [])
+        ).exists()
+        message = self.env['mail.message'].sudo().create({
+            'model': self._name,
+            'res_id': self.id,
+            'message_type': message_type,
+            'subtype_id': self.env.ref('mail.mt_note').id,
+            'author_id': self.env.user.partner_id.id,
+            'subject': subject,
+            'body': plaintext2html(body or ''),
+            'partner_ids': [(6, 0, partners.ids)],
+        })
+        if partners:
+            self.env['mail.notification'].sudo().create([{
+                'mail_message_id': message.id,
+                'res_partner_id': partner.id,
+                'notification_type': 'inbox',
+                'is_read': False,
+            } for partner in partners])
+        return message
+
     def _get_sla_alert_level(self, percent):
         if percent >= 100:
             return 100
@@ -984,7 +1016,7 @@ class SupportTicket(models.Model):
                     f'تم تجاوز SLA الحل '
                     f'للطلب {self.ticket_number}.'
                 )
-        message = self.message_post(
+        message = self._support_notify(
             subject=subject,
             body=body,
             partner_ids=partners.ids,
