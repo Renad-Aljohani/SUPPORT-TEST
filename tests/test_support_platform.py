@@ -581,3 +581,31 @@ class TestSupportHttp(HttpCase):
         kpis = self.url_open('/support/analytics').json()['kpis']
         self.assertIsNone(kpis['average_rating'])
         self.assertEqual(kpis['rated_tickets'], 0)
+
+    def test_12_empty_months_are_null_not_zero(self):
+        """UI-07 / FR-SYS-20: a month without data must not be reported as 0% compliance or 0 h."""
+        from dateutil.relativedelta import relativedelta
+        self.authenticate('qa_h_mgr', 'qa_h_mgr')
+        charts = self.url_open('/support/analytics').json()['charts']
+        mgr = self.env['res.users'].search([('login', '=', 'qa_h_mgr')])
+        Ticket = self.env['support.ticket'].sudo()
+        checked = 0
+        for label, trend, resp in zip(charts['trend']['labels'], charts['trend']['values'], charts['response_time']['values']):
+            year, month = map(int, label.split('-'))
+            start = fields.Datetime.to_datetime(f'{year}-{month:02d}-01') - relativedelta(hours=3)
+            end = start + relativedelta(months=1)
+            if not Ticket.search_count([('status', '!=', 'draft'), ('submitted_at', '>=', start), ('submitted_at', '<', end)]):
+                self.assertIsNone(trend, f'{label}: no tickets but compliance={trend}')
+                self.assertIsNone(resp, f'{label}: no tickets but response={resp}')
+                checked += 1
+        if not checked:
+            self.skipTest('every month in the window has tickets - nothing to verify')
+
+    def test_13_frontend_rtl_and_rating_markup(self):
+        """UI-01 (bidi isolation of name/date) and UI-02 (rating scale + accessible label)."""
+        from odoo.tools.misc import file_open
+        for path in ('website/static/src/js/employee.js', 'website/static/src/js/support.js'):
+            with file_open(path) as f:
+                self.assertIn('<small class="solution-meta"><bdi>', f.read(), path)
+        with file_open('website/static/src/js/employee.js') as f:
+            self.assertIn('aria-label="التقييم', f.read())
