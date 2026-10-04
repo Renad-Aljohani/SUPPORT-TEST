@@ -391,3 +391,26 @@ class TestSupportHttp(HttpCase):
         self.assertEqual(
             self.env['support.ticket.history'].sudo().search([('ticket_id', '=', ticket.id)], order='id').mapped('action'),
             ['create', 'claim', 'hold', 'resume', 'solution', 'reopen', 'solution', 'close', 'rating'])
+
+    def test_05_failed_request_rolls_back_and_returns_json(self):
+        """DEF-07: a business-rule error must not leave a partial ticket and must keep the JSON contract."""
+        title = 'QA rollback probe 7f3a'
+        r = self._create('qa_h_emp', 'qa_h_emp_pwd_1', title=title, category='استفسار', priority='high')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('application/json', r.headers.get('Content-Type', ''))
+        self.assertFalse(self.env['support.ticket'].sudo().search([('title', '=', title)]))
+
+    def test_06_session_expired_json_route_redirects_to_login(self):
+        """DEF-08 (server side): anonymous calls get the Odoo login redirect, never data."""
+        self.authenticate(None, None)
+        r = self.url_open('/support/manager/tickets', allow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        self.assertIn('/web/login', r.headers.get('Location', ''))
+        self.assertNotIn('tickets', r.text)
+
+    def test_07_frontend_handles_session_expiry(self):
+        """DEF-08 (client side): both fetch wrappers detect the login redirect."""
+        from odoo.tools.misc import file_open
+        for path in ('website/static/src/js/employee.js', 'website/static/src/js/support.js'):
+            with file_open(path) as f:
+                self.assertIn('redirectIfSessionExpired', f.read(), path)
