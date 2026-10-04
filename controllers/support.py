@@ -830,8 +830,8 @@ class SupportController(http.Controller):
         if employee and employee.department_id:
             ticket_values['department_id'] = employee.department_id.id
 
-        ticket = request.env['support.ticket'].create(ticket_values)
-        ticket._apply_sla_policy()
+        ticket = request.env['support.ticket'].sudo().create(ticket_values)
+        ticket.sudo()._apply_sla_policy()
 
         
         self._add_ticket_history(
@@ -851,7 +851,7 @@ class SupportController(http.Controller):
         )
 
         if support_partners:
-            message = ticket.message_post(
+            message = ticket.sudo().message_post(
                 subject='طلب دعم جديد',
                 body=(
                     f'تم إنشاء طلب دعم جديد '
@@ -1295,12 +1295,12 @@ class SupportController(http.Controller):
                 status=500
             )
 
-        draft.write({
+        draft.sudo().write({
             'ticket_number': ticket_number,
             'status': 'new',
             'submitted_at': fields.Datetime.now(),
         })
-        draft._apply_sla_policy()
+        draft.sudo()._apply_sla_policy()
 
         # إشعار جميع مسؤولي الدعم بعد إرسال المسودة
         support_group = request.env.ref(
@@ -1311,7 +1311,7 @@ class SupportController(http.Controller):
             'partner_id'
         )
         if support_partners:
-            message = draft.message_post(
+            message = draft.sudo().message_post(
                 subject='طلب دعم جديد',
                 body=(
                     f'تم إنشاء طلب دعم جديد '
@@ -1752,7 +1752,7 @@ class SupportController(http.Controller):
                 else 'failed'
             )
 
-        ticket.write({
+        ticket.sudo().write({
             'assignee_id': request.env.user.id,
             'status': 'processing',
             'first_response_at': first_response_at,
@@ -1764,13 +1764,13 @@ class SupportController(http.Controller):
             sla_response_status == 'failed'
             and ticket.sla_response_alert_level < 100
         ):
-            sent = ticket._send_sla_alert(
+            sent = ticket.sudo()._send_sla_alert(
                 'response',
                 100
             )
 
             if sent:
-                ticket.write({
+                ticket.sudo().write({
                     'sla_response_alert_level': 100,
                 })
 
@@ -1780,13 +1780,13 @@ class SupportController(http.Controller):
             ticket.sla_resolution_status == 'failed'
             and ticket.sla_resolution_alert_level < 100
         ):
-            sent = ticket._send_sla_alert(
+            sent = ticket.sudo()._send_sla_alert(
                 'resolution',
                 100
             )
 
             if sent:
-                ticket.write({
+                ticket.sudo().write({
                     'sla_resolution_alert_level': 100,
                 })
 
@@ -1795,7 +1795,7 @@ class SupportController(http.Controller):
             ticket.requester_id.partner_id
         )       
 
-        message = ticket.message_post(
+        message = ticket.sudo().message_post(
             subject='تم استلام طلبك',
             body=(
                 f'تم استلام الطلب '
@@ -2741,7 +2741,7 @@ class SupportController(http.Controller):
                 else 'failed'
             )
 
-        ticket.write({
+        ticket.sudo().write({
             'solution': solution,
             'solution_at': solution_at,
             'status': 'waiting_confirmation',
@@ -2756,7 +2756,7 @@ class SupportController(http.Controller):
             note='تم إرسال الحل'
         )
 
-        message = ticket.message_post(
+        message = ticket.sudo().message_post(
             subject='تم إرسال حل للطلب',
             body=(
                 f'تم إرسال حل للطلب '
@@ -2876,7 +2876,7 @@ class SupportController(http.Controller):
 
         # تأكيد الحل وإغلاق الطلب
         if action == 'confirm':
-            ticket.write({
+            ticket.sudo().write({
             'status': 'closed',
             'closed_at': fields.Datetime.now(),
   
@@ -2893,7 +2893,7 @@ class SupportController(http.Controller):
             if ticket.assignee_id:
                 partner = ticket.assignee_id.partner_id
 
-                message = ticket.message_post(
+                message = ticket.sudo().message_post(
                     subject='تم إغلاق الطلب',
                     body=(
                         f'تم تأكيد الحل وإغلاق الطلب '
@@ -2931,7 +2931,7 @@ class SupportController(http.Controller):
             })
         # المشكلة مستمرة وإعادة الطلب للمعالجة
         if action == 'reopen':
-            ticket.write({
+            ticket.sudo().write({
                 'status': 'processing',
                 'sla_resolution_status': 'in_progress',
                 'reopen_count': ticket.reopen_count + 1,
@@ -2951,7 +2951,7 @@ class SupportController(http.Controller):
             if ticket.assignee_id:
                 partner = ticket.assignee_id.partner_id
 
-                message = ticket.message_post(
+                message = ticket.sudo().message_post(
                     subject='تمت إعادة فتح الطلب',
                     body=(
                         f'تمت إعادة فتح الطلب '
@@ -3116,7 +3116,7 @@ class SupportController(http.Controller):
         if ticket.assignee_id:
             partner = ticket.assignee_id.partner_id
 
-            message = ticket.message_post(
+            message = ticket.sudo().message_post(
                 subject='تم تقييم الخدمة',
                 body=(
                     f'تم تقييم الطلب '
