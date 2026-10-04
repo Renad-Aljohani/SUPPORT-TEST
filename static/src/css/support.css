@@ -2207,7 +2207,8 @@ h3) {
   padding-top: 10px;
   color: var(--muted);
   font-size: var(--fs-sm);
-  unicode-bidi: plaintext;
+  /* السطر عربي ثابت الاتجاه؛ <bdi> في القالب يعزل الاسم والتاريخ (UI-01) */
+  unicode-bidi: isolate;
 }
 
 #app .action-callout {
