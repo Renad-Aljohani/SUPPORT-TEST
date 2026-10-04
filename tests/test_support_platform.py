@@ -211,6 +211,57 @@ class TestSupportSLA(SupportQACommon):
         self.assertIn('hr', website.dependencies_id.mapped('name'),
                       'support.ticket uses hr.department / hr.employee but website does not depend on hr')
 
+    def test_14_working_day_boundaries(self):
+        # Sunday 16:00 local (end of day), technical/high 1h -> Monday 09:00 local
+        t = self._submit('2026-10-04 13:00:00', self.cat_tech, 'high')
+        self.assertEqual(t.sla_response_deadline, DT('2026-10-05 06:00:00'))
+        # Sunday 07:30 local (before opening) -> clock starts 08:00, 1h -> 09:00 local
+        t2 = self._submit('2026-10-04 04:30:00', self.cat_tech, 'high')
+        self.assertEqual(t2.sla_response_deadline, DT('2026-10-04 06:00:00'))
+
+    def test_15_late_claim_breaches_response(self):
+        t = self._submit('2026-10-04 06:00:00', self.cat_tech, 'medium')   # response deadline 08:00 UTC
+        self._claim(t, '2026-10-04 08:30:00')
+        self.assertEqual(t.sla_response_status, 'failed')
+
+    def test_16_late_solution_breaches_resolution(self):
+        t = self._submit('2026-10-04 06:00:00', self.cat_inquiry, 'medium')  # 4h -> 10:00 UTC
+        self._claim(t, '2026-10-04 06:30:00')
+        self._solve(t, '2026-10-04 10:30:00')
+        self.assertEqual(t.sla_resolution_status, 'failed')
+
+    def test_17_cron_resolution_alerts(self):
+        t = self._submit('2026-10-04 06:00:00', self.cat_inquiry, 'medium')  # resolution 4h -> 10:00 UTC
+        self._claim(t, '2026-10-04 06:10:00')
+        for when, level in [('2026-10-04 09:05:00', 75), ('2026-10-04 09:40:00', 90), ('2026-10-04 10:05:00', 100)]:
+            with freeze_time(when):
+                self.env['support.ticket']._cron_update_sla_statuses()
+            self.assertEqual(t.sla_resolution_alert_level, level, when)
+        self.assertEqual(t.sla_resolution_status, 'failed')
+        alerts = self.env['mail.message'].sudo().search([('model', '=', 'support.ticket'), ('res_id', '=', t.id), ('subject', 'ilike', 'SLA الحل')])
+        self.assertEqual(len(alerts), 3)
+        self.assertIn(self.mgr1.partner_id, alerts.mapped('partner_ids'), 'alerts go to the assignee')
+
+    def test_18_no_breach_while_on_hold(self):
+        t = self._submit('2026-10-04 06:00:00', self.cat_inquiry, 'medium')  # resolution 10:00 UTC
+        self._claim(t, '2026-10-04 06:10:00')
+        with freeze_time('2026-10-04 07:00:00'):
+            t.with_user(self.mgr1).pause_resolution_sla('scheduled')
+        with freeze_time('2026-10-05 12:00:00'):   # far beyond the original deadline
+            self.env['support.ticket']._cron_update_sla_statuses()
+        self.assertEqual(t.sla_resolution_status, 'in_progress')
+
+    def test_19_paused_hours_excluded_from_percent(self):
+        t = self._submit('2026-10-04 06:00:00', self.cat_tech, 'medium')  # 8h
+        self._claim(t, '2026-10-04 06:10:00')
+        with freeze_time('2026-10-04 07:00:00'):
+            t.with_user(self.mgr1).pause_resolution_sla('waiting_employee')
+        with freeze_time('2026-10-04 09:00:00'):
+            t.with_user(self.mgr1).resume_resolution_sla()
+        with freeze_time('2026-10-04 10:00:00'):   # 4h elapsed - 2h paused = 2h used -> 25%
+            metrics = t.get_sla_metrics('resolution')
+        self.assertAlmostEqual(metrics['percent'], 25.0, delta=0.5)
+
     def test_12_sla_cron_is_scheduled(self):
         """FR-SYS-18/19: breach detection and near-breach alerts must run automatically."""
         crons = self.env['ir.cron'].sudo().with_context(active_test=False).search([
@@ -448,3 +499,25 @@ class TestSupportHttp(HttpCase):
         from odoo.tools.misc import file_open
         with file_open('website/controllers/support.py') as f:
             self.assertNotIn('print(', f.read())
+
+    def test_11_analytics_match_database(self):
+        """FR-SYS-20: dashboard KPIs equal an independent ORM computation; no ratings -> None."""
+        from dateutil.relativedelta import relativedelta
+        self.authenticate('qa_h_mgr', 'qa_h_mgr')
+        kpis = self.url_open('/support/analytics').json()['kpis']
+        mgr = self.env['res.users'].search([('login', '=', 'qa_h_mgr')])
+        today = fields.Date.context_today(mgr)
+        start = fields.Datetime.to_datetime(today.replace(day=1) - relativedelta(months=5))
+        tickets = self.env['support.ticket'].sudo().search([('status', '!=', 'draft'), ('submitted_at', '>=', start)])
+        ratings = self.env['support.rating'].sudo().search([('ticket_id', 'in', tickets.ids)])
+        self.assertEqual(kpis['total_tickets'], len(tickets))
+        self.assertEqual(kpis['open_tickets'], len(tickets.filtered(lambda t: t.status != 'closed')))
+        self.assertEqual(kpis['breached_tickets'], len(tickets.filtered(
+            lambda t: 'failed' in (t.sla_response_status, t.sla_resolution_status))))
+        expected_avg = round(sum(int(r.rating) for r in ratings) / len(ratings), 2) if ratings else None
+        self.assertEqual(kpis['average_rating'], expected_avg)
+        self.assertEqual(kpis['rated_tickets'], len(ratings))
+        ratings.unlink()
+        kpis = self.url_open('/support/analytics').json()['kpis']
+        self.assertIsNone(kpis['average_rating'])
+        self.assertEqual(kpis['rated_tickets'], 0)
