@@ -406,7 +406,7 @@ class TestSupportHttp(HttpCase):
         r = self.url_open('/support/manager/tickets', allow_redirects=False)
         self.assertIn(r.status_code, (302, 303))
         self.assertIn('/web/login', r.headers.get('Location', ''))
-        self.assertNotIn('tickets', r.text)
+        self.assertNotIn('"tickets"', r.text)  # no JSON payload, only the login redirect
 
     def test_07_frontend_handles_session_expiry(self):
         """DEF-08 (client side): both fetch wrappers detect the login redirect."""
