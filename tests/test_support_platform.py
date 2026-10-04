@@ -52,7 +52,8 @@ class SupportQACommon(TransactionCase):
     def _submit(self, when, category=None, priority='medium', user=None):
         user = user or self.emp1
         with freeze_time(when):
-            ticket = self.env['support.ticket'].with_user(user).create({
+            # mirrors the controller: validated server-side, then created under sudo() as the same uid
+            ticket = self.env['support.ticket'].with_user(user).sudo().create({
                 'title': 'QA ticket',
                 'description': 'QA description',
                 'category_id': (category or self.cat_tech).id,
