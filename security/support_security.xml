@@ -38,10 +38,26 @@
             [('requester_id', '=', user.id)]
         </field>
         <field name="perm_read" eval="True"/>
-        <field name="perm_write" eval="True"/>
+        <!-- الكتابة المباشرة محصورة في المسودات (القاعدة التالية)؛
+             إجراءات سير العمل تتم في السيرفر بعد التحقق. -->
+        <field name="perm_write" eval="False"/>
         <field name="perm_create" eval="True"/>
         <field name="perm_unlink" eval="True"/>
 
+    </record>
+
+    <!-- BR-04: الموظف يعدّل مسودته فقط (طبقة ir.rule فوق فحص الحقول في write()) -->
+    <record id="rule_support_ticket_employee_write_draft" model="ir.rule">
+        <field name="name">Employee - Write Own Drafts Only</field>
+        <field name="model_id" ref="model_support_ticket"/>
+        <field name="groups" eval="[(4, ref('website.group_support_employee'))]"/>
+        <field name="domain_force">
+            [('requester_id', '=', user.id), ('status', '=', 'draft')]
+        </field>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
     </record>
 
     <record id="rule_support_ticket_manager" model="ir.rule">
@@ -63,7 +79,8 @@
         </field>
 
         <field name="perm_read" eval="True"/>
-        <field name="perm_write" eval="True"/>
+        <!-- لا كتابة مباشرة لمسؤول الدعم؛ كل الإجراءات عبر السيرفر بعد التحقق -->
+        <field name="perm_write" eval="False"/>
         <field name="perm_create" eval="True"/>
         <field name="perm_unlink" eval="True"/>
 
