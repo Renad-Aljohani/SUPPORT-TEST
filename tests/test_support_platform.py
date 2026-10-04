@@ -149,6 +149,12 @@ class TestSupportSLA(SupportQACommon):
         with self.assertRaises(ValidationError):
             self._submit('2026-10-04 06:00:00', self.cat_inquiry, 'high')
 
+    def test_06b_inquiry_rule_survives_category_rename(self):
+        """DEF-11: the inquiry/high rule must not depend on the display name."""
+        self.cat_inquiry.name = 'استفسار عام'
+        with self.assertRaises(ValidationError):
+            self._submit('2026-10-04 06:00:00', self.cat_inquiry, 'high')
+
     def test_07_draft_has_no_sla(self):
         t = self.env['support.ticket'].with_user(self.emp1).create({'title': 'draft', 'status': 'draft'})
         t.sudo()._apply_sla_policy()
@@ -414,3 +420,31 @@ class TestSupportHttp(HttpCase):
         for path in ('website/static/src/js/employee.js', 'website/static/src/js/support.js'):
             with file_open(path) as f:
                 self.assertIn('redirectIfSessionExpired', f.read(), path)
+
+    def test_08_hold_reason_kept_in_history(self):
+        """DEF-10 / FR-SUP-10: the hold reason stays traceable after resume."""
+        r = self._create('qa_h_emp', 'qa_h_emp_pwd_1')
+        number = r.json()['ticket_number']
+        mgr = ('qa_h_mgr', 'qa_h_mgr')
+        for path, payload in [('/support/ticket/claim', {'ticket_number': number}),
+                              ('/support/ticket/hold', {'ticket_number': number, 'reason': 'waiting_approval'}),
+                              ('/support/ticket/resume', {'ticket_number': number})]:
+            self.assertEqual(self._json(*mgr, path, payload).status_code, 200, path)
+        hold = self.env['support.ticket.history'].sudo().search(
+            [('ticket_id.ticket_number', '=', number), ('action', '=', 'hold')])
+        self.assertIn('بانتظار موافقة', hold.note)
+
+    def test_09_rejected_request_does_not_consume_ticket_number(self):
+        """DEF-12: validation failures must not burn reference numbers."""
+        seq = self.env['ir.sequence'].sudo().search([('code', '=', 'support.ticket')], limit=1)
+        before = seq.number_next_actual
+        r = self._create('qa_h_emp', 'qa_h_emp_pwd_1', priority='urgent')
+        self.assertEqual(r.status_code, 400)
+        seq.invalidate_recordset()
+        self.assertEqual(seq.number_next_actual, before)
+
+    def test_10_no_debug_print_of_form_data(self):
+        """DEF-09: submitted form data must not be printed to the server output."""
+        from odoo.tools.misc import file_open
+        with file_open('website/controllers/support.py') as f:
+            self.assertNotIn('print(', f.read())
