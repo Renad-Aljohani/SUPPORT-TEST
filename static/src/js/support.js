@@ -2736,7 +2736,7 @@ async function renderDetail(id) {
 
                     <p class="solution-text">${escapeHTML(ticket.solution)}</p>
 
-                    <small class="solution-meta">${escapeHTML(ticket.assignee || '')} — ${escapeHTML(formatDateTime(ticket.solutionAt))}</small>
+                    <small class="solution-meta"><bdi>${escapeHTML(ticket.assignee || '')}</bdi> — <bdi>${escapeHTML(formatDateTime(ticket.solutionAt))}</bdi></small>
 
                   </div>
 
@@ -3598,14 +3598,14 @@ function renderResponseTimeChart(data = {}) {
   const values =
     Array.isArray(data.values)
       ? data.values.map(
-          value => Number(value || 0)
+          value => (value === null || value === undefined ? null : Number(value))
         )
       : [];
 
   const maxValue =
     Math.max(
       1,
-      ...values
+      ...values.filter(value => value !== null)
     );
 
   const formatMonth = value => {
@@ -3647,19 +3647,19 @@ function renderResponseTimeChart(data = {}) {
           labels.map(
             (label, index) => {
 
-              const value =
-                Number(values[index] || 0);
+              const value = values[index];
+              const hasData = value !== null && value !== undefined;
 
               const height =
-                (
-                  value / maxValue
-                ) * 100;
+                hasData
+                  ? (value / maxValue) * 100
+                  : 0;
 
               return `
                 <div class="analytics-column-item">
 
                   <div class="analytics-column-value">
-                    ${formatSlaHours(value)}
+                    ${hasData ? formatSlaHours(value) : '<span title="لا توجد بيانات">—</span>'}
                   </div>
 
                   <div class="analytics-column-track">
@@ -3697,14 +3697,14 @@ function renderResolutionTimeChart(data = {}) {
   const values =
     Array.isArray(data.values)
       ? data.values.map(
-          value => Number(value || 0)
+          value => (value === null || value === undefined ? null : Number(value))
         )
       : [];
 
   const maxValue =
     Math.max(
       1,
-      ...values
+      ...values.filter(value => value !== null)
     );
 
   const formatMonth = value => {
@@ -3746,19 +3746,19 @@ function renderResolutionTimeChart(data = {}) {
           labels.map(
             (label, index) => {
 
-              const value =
-                Number(values[index] || 0);
+              const value = values[index];
+              const hasData = value !== null && value !== undefined;
 
               const height =
-                (
-                  value / maxValue
-                ) * 100;
+                hasData
+                  ? (value / maxValue) * 100
+                  : 0;
 
               return `
                 <div class="analytics-column-item">
 
                   <div class="analytics-column-value">
-                    ${formatSlaHours(value)}
+                    ${hasData ? formatSlaHours(value) : '<span title="لا توجد بيانات">—</span>'}
                   </div>
 
                   <div class="analytics-column-track">
@@ -3796,7 +3796,7 @@ function renderSlaTrend(trendData = {}) {
   const values =
     Array.isArray(trendData.values)
       ? trendData.values.map(
-          value => Number(value || 0)
+          value => (value === null || value === undefined ? null : Number(value))
         )
       : [];
 
@@ -3808,9 +3808,14 @@ function renderSlaTrend(trendData = {}) {
 
   /* المنصة RTL: الشهر الأول في أقصى اليمين، وكل نقطة في منتصف عمود شهرها
      تمامًا فوق تسميته — بلا أي عكس بالـ CSS */
-  const points =
+  /* شهر بلا بيانات (null) لا يُرسم كنقطة 0% بل يُترك فارغًا */
+  const allPoints =
     values.map(
       (value, index) => {
+
+        if (value === null) {
+          return null;
+        }
 
         const pct =
           (count - 1 - index + 0.5) * colPct;
@@ -3829,13 +3834,16 @@ function renderSlaTrend(trendData = {}) {
           y,
           yPct: (y / height) * 100,
           left: (count - 1 - index) * colPct,
-          value
+          value,
+          index
         };
       }
     );
 
+  const points = allPoints.filter(Boolean);
+
   const deltaInfo = index => {
-    if (index === 0) return null;
+    if (index === 0 || values[index] === null || values[index - 1] === null) return null;
     const diff = Math.round((values[index] - values[index - 1]) * 10) / 10;
     const prev = formatMonth(labels[index - 1]);
     if (!diff) return { cls: 'is-flat', text: `دون تغيير عن ${prev}` };
@@ -3919,13 +3927,14 @@ function renderSlaTrend(trendData = {}) {
           <div class="sla-line-hits">
             ${
               points.map(
-                (point, index) => {
+                point => {
+                  const index = point.index;
                   const month = escapeHTML(formatMonth(labels[index]));
                   const delta = deltaInfo(index);
                   return `
                     <button
                       type="button"
-                      class="sla-hit${index === points.length - 1 ? ' is-current' : ''}${point.yPct < 40 ? ' tip-below' : ''}"
+                      class="sla-hit${index === values.length - 1 ? ' is-current' : ''}${point.yPct < 40 ? ' tip-below' : ''}"
                       style="left:${point.left}%;width:${colPct}%"
                       aria-label="${month}: ${point.value}%"
                     >
@@ -3960,10 +3969,10 @@ function renderSlaTrend(trendData = {}) {
 
                   <strong>
                     ${
-                      Number(
-                        values[index] || 0
-                      )
-                    }%
+                      values[index] === null
+                        ? '<span title="لا توجد بيانات">—</span>'
+                        : `${values[index]}%`
+                    }
                   </strong>
 
                 </span>

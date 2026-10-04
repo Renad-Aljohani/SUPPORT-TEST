@@ -2576,7 +2576,7 @@ class SupportController(http.Controller):
                     1
                 )
                 if completed
-                else 0.0
+                else None  # شهر بلا طلبات مُقيّمة: لا بيانات، وليس 0%
             )
 
             response_value = (
@@ -2592,7 +2592,7 @@ class SupportController(http.Controller):
                 if month[
                     'response_hours'
                 ]
-                else 0.0
+                else None
             )
 
             resolution_value = (
@@ -2612,7 +2612,7 @@ class SupportController(http.Controller):
                 if month[
                     'resolution_hours'
                 ]
-                else 0.0
+                else None
             )
 
             trend_labels.append(

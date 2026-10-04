@@ -4672,7 +4672,7 @@ async function renderDetail(id) {
 
                     <p class="solution-text">${escapeHTML(ticket.solution)}</p>
 
-                    <small class="solution-meta">${escapeHTML(ticket.assignee || '')} — ${escapeHTML(formatDateTime(ticket.solutionAt))}</small>
+                    <small class="solution-meta"><bdi>${escapeHTML(ticket.assignee || '')}</bdi> — <bdi>${escapeHTML(formatDateTime(ticket.solutionAt))}</bdi></small>
 
                   </div>
 
@@ -4812,9 +4812,10 @@ function renderEmployeeAction(
 
           <p>
 
-            ${'★'.repeat(
+            <span role="img" aria-label="التقييم ${Number(ticket.rating.value)} من 5">${'★'.repeat(
         ticket.rating.value
-      )}
+      )}${'☆'.repeat(Math.max(0, 5 - Number(ticket.rating.value)))}</span>
+            <small>(${Number(ticket.rating.value)} من 5)</small>
 
 
             ${ticket.rating.comment
