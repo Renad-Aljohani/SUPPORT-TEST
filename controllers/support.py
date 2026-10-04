@@ -460,13 +460,17 @@ class SupportController(http.Controller):
             )
 
 
+            reason_label = dict(
+                ticket._fields['sla_pause_reason'].selection
+            ).get(reason, reason)
+
             self._add_ticket_history(
-             ticket=ticket,
-             action='hold',
-             old_status='processing',
-             new_status='on_hold',
-             note='تم تعليق الطلب مؤقتًا'
-           )
+                ticket=ticket,
+                action='hold',
+                old_status='processing',
+                new_status='on_hold',
+                note=f'تم تعليق الطلب مؤقتًا — السبب: {reason_label}',
+            )
             
         except ValidationError as error:
             return request.make_json_response(
@@ -748,7 +752,6 @@ class SupportController(http.Controller):
             data = json_data
         else:
             data = request.httprequest.form.to_dict()
-            print("CREATE DATA =", data)
 
         title = (
             data.get('title') or ''
@@ -805,21 +808,6 @@ class SupportController(http.Controller):
                 },
                 status=400
             )                                                                
-        ticket_number = (
-            request.env['ir.sequence']
-            .sudo()
-            .next_by_code('support.ticket')
-        )
-
-        if not ticket_number:
-            return request.make_json_response(
-                {
-
-                    'success': False,
-                    'message': 'تعذر إنشاء رقم الطلب.',
-                },
-                status=500
-            )
         # فحص المرفق قبل إنشاء الطلب
         attachment_file = request.httprequest.files.get(
             'attachment'
@@ -862,6 +850,23 @@ class SupportController(http.Controller):
             )
 
         priority = priority_value
+
+        # الرقم المرجعي يُستهلك فقط بعد نجاح كل التحققات (لا فجوات بسبب طلبات مرفوضة).
+        ticket_number = (
+            request.env['ir.sequence']
+            .sudo()
+            .next_by_code('support.ticket')
+        )
+
+        if not ticket_number:
+            return request.make_json_response(
+                {
+
+                    'success': False,
+                    'message': 'تعذر إنشاء رقم الطلب.',
+                },
+                status=500
+            )
 
         employee = self._get_current_employee()
         ticket_values = {
@@ -1063,7 +1068,6 @@ class SupportController(http.Controller):
                 status=403
             )
         data = request.httprequest.form.to_dict()
-        print("DRAFT DATA =", data)
        
         draft_id = data.get('draft_id')
 

@@ -1218,11 +1218,22 @@ class SupportTicket(models.Model):
     )
     def _check_inquiry_priority(self):
 
+        inquiry = self.env.ref(
+            'website.support_category_consultation',
+            raise_if_not_found=False,
+        )
+
         for ticket in self:
+
+            is_inquiry = (
+                ticket.category_id == inquiry
+                if inquiry
+                else ticket.category_id.name == 'استفسار'
+            )
 
             if (
                 ticket.category_id
-                and ticket.category_id.name == 'استفسار'
+                and is_inquiry
                 and ticket.priority == 'high'
             ):
 
