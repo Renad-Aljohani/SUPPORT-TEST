@@ -609,3 +609,26 @@ class TestSupportHttp(HttpCase):
                 self.assertIn('<small class="solution-meta"><bdi>', f.read(), path)
         with file_open('website/static/src/js/employee.js') as f:
             self.assertIn('aria-label="التقييم', f.read())
+
+
+@tagged('post_install', '-at_install', 'support_qa')
+class TestSupportControllerContract(TransactionCase):
+
+    def test_01_concurrency_errors_reach_odoo_retry(self):
+        """DEF-07b: the JSON error wrapper must let PostgreSQL concurrency errors
+        propagate so Odoo's native retry (service.model.retrying) can resolve them."""
+        import psycopg2
+        from psycopg2 import errorcodes
+        from odoo.addons.website.controllers import support as support_ctrl
+        wrapper = getattr(support_ctrl, '_json_errors', None)
+        if wrapper is None:
+            self.skipTest('no JSON error wrapper in this version (not applicable)')
+
+        class SerializationFailure(psycopg2.extensions.TransactionRollbackError):
+            pgcode = errorcodes.SERIALIZATION_FAILURE
+
+        def endpoint(_self):
+            raise SerializationFailure('could not serialize access due to concurrent update')
+
+        with self.assertRaises(psycopg2.OperationalError):
+            wrapper(endpoint)(None)
