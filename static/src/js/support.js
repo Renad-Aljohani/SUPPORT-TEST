@@ -5,7 +5,87 @@ import { registry } from "@web/core/registry";
 const app =   document.getElementById('app');
 const CURRENT_SUPPORT_ID = Number(app?.dataset.supportId);
 
+let csrfToken =
+  app?.dataset.csrfToken ||
+  window.odoo?.csrf_token ||
+  '';
 
+async function getCsrfToken() {
+  if (csrfToken) {
+    return csrfToken;
+  }
+
+  const response = await fetch(
+    '/support/csrf',
+    {
+      credentials: 'same-origin',
+      headers: {
+        'Accept': 'application/json'
+      }
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || !result.csrf_token) {
+    throw new Error(
+      'تعذر تهيئة الحماية الأمنية للجلسة.'
+    );
+  }
+
+  csrfToken = result.csrf_token;
+  return csrfToken;
+}
+
+async function supportFetch(resource, options = {}) {
+  const config = {
+    credentials: 'same-origin',
+    ...options,
+  };
+
+  const method = String(
+    config.method || 'GET'
+  ).toUpperCase();
+
+  let url = String(resource);
+
+  if (![
+    'GET',
+    'HEAD',
+    'OPTIONS',
+    'TRACE',
+  ].includes(method)) {
+    const token = await getCsrfToken();
+
+    if (config.body instanceof FormData) {
+      config.body.set('csrf_token', token);
+    } else {
+      const separator = url.includes('?') ? '&' : '?';
+      url += `${separator}csrf_token=${encodeURIComponent(token)}`;
+    }
+  }
+
+ 
+config.headers = {
+  'Accept': 'application/json',
+  ...(config.headers || {}),
+};
+
+const response = await fetch(url, config);
+
+if (!response.ok) {
+  const text = await response.clone().text();
+
+  console.error(
+    'Support API Error:',
+    response.status,
+    url,
+    text
+  );
+}
+
+return response;
+}
 const isManagerPage =
   app?.dataset.supportName !== undefined;
 
@@ -66,8 +146,6 @@ const paths = {
 
 
 
-let supportBus = null;
-
 const supportChatBusService = {
   dependencies: ['bus_service'],
 
@@ -75,8 +153,6 @@ const supportChatBusService = {
     if (!isManagerPage) {
     return;
   }
-    supportBus = bus_service;
-
     bus_service.addEventListener(
       'notification',
       async ({ detail: notifications }) => {
@@ -107,6 +183,7 @@ const supportChatBusService = {
             if (ticket) {
               await renderDetail(
                 ticket.id
+            
               );
             }
           }
@@ -122,6 +199,29 @@ registry.category(
   'manager_support_chat_bus_service',
   supportChatBusService
 );
+
+
+/* ترحيب شخصي أعلى الصفحة الرئيسية — عرض فقط، لا يغيّر أي بيانات */
+function greetingHTML(name, parts = []) {
+  const hour = new Date().getHours();
+  const hello = hour < 12 ? 'صباح الخير' : 'مساء الخير';
+  const first = String(name || '').trim().split(/\s+/)[0] || '';
+  const summary = parts.filter(Boolean);
+  const today = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+  return `
+    <p class="page-greeting">
+      <strong>${hello}${first ? '، ' + escapeHTML(first) : ''}</strong>
+      <span>${summary.length ? 'لديك ' + summary.join('، و') : 'لا توجد طلبات بانتظارك الآن'}</span>
+    </p>
+    <time class="page-date">${today}</time>
+  `;
+}
+
+function countLabel(n, one, many, cls) {
+  if (!n) return '';
+  return `<b class="${cls}">${n === 1 ? one : n + ' ' + many}</b>`;
+}
+
 
 function escapeHTML(value = '') {
   return String(value).replace(
@@ -243,17 +343,109 @@ function ticketStageIndex(status) {
 
   return indexes[status] ?? 0;
 }
+function formatSlaSeconds(totalSeconds) {
+  const value = Math.max(
+    0,
+    Math.floor(Number(totalSeconds) || 0)
+  );
+
+  const hours = Math.floor(value / 3600);
+
+  const minutes = Math.floor(
+    (value % 3600) / 60
+  );
+
+  const seconds = value % 60;
+
+  return [
+    String(hours).padStart(2, '0'),
+    String(minutes).padStart(2, '0'),
+    String(seconds).padStart(2, '0'),
+  ].join(':');
+}
+
+let slaCountdownTimer = null;
+
+function startSlaCountdown() {
+
+  if (slaCountdownTimer) {
+    clearInterval(
+      slaCountdownTimer
+    );
+  }
+
+  slaCountdownTimer =
+    setInterval(() => {
+
+      const badge =
+        document.querySelector(
+          '[data-sla-countdown]'
+        );
+
+      if (!badge) {
+        return;
+      }
+
+      const isWorking =
+        badge.dataset.working === '1';
+
+      let seconds =
+        Number(
+          badge.dataset.seconds || 0
+        );
+
+      if (
+        !isWorking ||
+        seconds <= 0
+      ) {
+        return;
+      }
+
+      seconds -= 1;
+
+      badge.dataset.seconds =
+        String(seconds);
+
+      const time =
+        badge.querySelector(
+          '[data-sla-time]'
+        );
+
+      if (time) {
+        time.textContent =
+          formatSlaSeconds(seconds);
+      }
+
+      if (seconds <= 0) {
+
+        badge.classList.remove(
+          'sla-badge-safe',
+          'sla-badge-warning'
+        );
+
+        badge.classList.add(
+          'sla-badge-danger'
+        );
+
+        badge.textContent =
+          'SLA متجاوز';
+      }
+
+    }, 1000);
+}
+
 
 function renderSlaBadge(ticket) {
+  
 
   const percent =
     Number(
       ticket.sla_resolution_percent || 0
     );
 
-  const hours =
+  const seconds =
     Number(
-      ticket.sla_resolution_remaining_hours || 0
+      ticket.sla_resolution_remaining_seconds || 0
     );
 
   const status =
@@ -262,55 +454,62 @@ function renderSlaBadge(ticket) {
   const paused =
     ticket.status === 'معلق مؤقتًا';
 
-
   let tone =
     'sla-badge-safe';
-
-  let text = '';
 
 
   if (paused) {
 
-    tone =
-      'sla-badge-paused';
+    return `
+      <span
+        class="
+          sla-badge
+          sla-badge-paused
+        "
+      >
+        SLA متوقف مؤقتًا
+      </span>
+    `;
+  }
 
-    text =
-      'SLA متوقف مؤقتًا';
 
-  } else if (
-    status === 'successful'
-  ) {
+  if (status === 'successful') {
 
-    tone =
-      'sla-badge-success';
+    return `
+      <span
+        class="
+          sla-badge
+          sla-badge-success
+        "
+      >
+        SLA محقق
+      </span>
+    `;
+  }
 
-    text =
-      'SLA محقق';
 
-  } else if (
+  if (
     status === 'failed'
     || percent >= 100
   ) {
 
+    return `
+      <span
+        class="
+          sla-badge
+          sla-badge-danger
+        "
+      >
+        SLA متجاوز
+      </span>
+    `;
+  }
+
+
+  if (percent >= 90) {
+
     tone =
       'sla-badge-danger';
-
-    text =
-      'SLA متجاوز';
-
-  } else if (
-    percent >= 90
-  ) {
-
-    tone =
-      'sla-badge-danger';
-
-    text =
-      `متبقي ${
-        formatSlaHours(
-          hours
-        )
-      }`;
 
   } else if (
     percent >= 75
@@ -318,25 +517,6 @@ function renderSlaBadge(ticket) {
 
     tone =
       'sla-badge-warning';
-
-    text =
-      `متبقي ${
-        formatSlaHours(
-          hours
-        )
-      }`;
-
-  } else {
-
-    tone =
-      'sla-badge-safe';
-
-    text =
-      `متبقي ${
-        formatSlaHours(
-          hours
-        )
-      }`;
 
   }
 
@@ -347,13 +527,20 @@ function renderSlaBadge(ticket) {
         sla-badge
         ${tone}
       "
+      data-sla-countdown
+      data-seconds="${seconds}"
+      data-working="${
+        ticket.sla_is_working_time
+          ? '1'
+          : '0'
+      }"
     >
-      ${escapeHTML(text)}
-    </span>
+  <span data-sla-time>
+  ${formatSlaSeconds(seconds)}
+</span>
+SLA
   `;
 }
-
-
 function formatSlaHours(hours) {
 
   if (
@@ -392,6 +579,29 @@ function formatSlaHours(hours) {
   return `${minutes} د`;
 }
 
+
+/* عنصر بيانات في رأس تفاصيل الطلب: مربع أيقونة + تسمية + قيمة */
+const META_ICONS = {
+  'النوع': 'file',
+  'الإدارة': 'dashboard',
+  'تاريخ الإنشاء': 'clock',
+  'مسؤول الدعم': 'headset',
+  'صاحب الطلب': 'user',
+  'الأولوية': 'chart'
+};
+
+function metaItem(label, valueHTML) {
+  const key = String(label).trim();
+  return `
+    <div class="detail-meta-item">
+      <div class="meta-text">
+        <small>${icon(META_ICONS[key] || 'file')}${label}</small>
+        <strong>${valueHTML}</strong>
+      </div>
+    </div>
+  `;
+}
+
 function renderTicketHero(ticket, facts = []) {
   return `
     <section class="detail-hero">
@@ -428,34 +638,17 @@ function renderTicketHero(ticket, facts = []) {
 
       <div class="detail-meta">
 
-        <div class="detail-meta-item">
-          <small>النوع</small>
-          <strong>${escapeHTML(ticket.type || '—')}</strong>
-        </div>
+        ${metaItem('النوع', escapeHTML(ticket.type || '—'))}
 
 
-        <div class="detail-meta-item">
-          <small>الإدارة</small>
-          <strong>${escapeHTML(ticket.department || '—')}</strong>
-        </div>
+        ${metaItem('الإدارة', escapeHTML(ticket.department || '—'))}
 
 
-        <div class="detail-meta-item">
-          <small>تاريخ الإنشاء</small>
-          <strong>
-            ${icon('clock')}
-            ${escapeHTML(formatDateTime(ticket.createdAt))}
-          </strong>
-        </div>
+        ${metaItem('تاريخ الإنشاء', escapeHTML(formatDateTime(ticket.createdAt)))}
 
 
         ${facts.map(
-          fact => `
-            <div class="detail-meta-item">
-              <small>${fact.label}</small>
-              <strong>${fact.value}</strong>
-            </div>
-          `
+          fact => metaItem(fact.label, fact.value)
         ).join('')}
 
       </div>
@@ -516,6 +709,25 @@ function renderTicketProgress(ticket) {
   `;
 }
 
+/* توضيح طريقة حساب كل بطاقة — يظهر عند التمرير أو التركيز (عرض فقط) */
+const STAT_HINTS = {
+  'إجمالي الطلبات': 'عدد كل الطلبات الظاهرة في اللوحة بجميع حالاتها.',
+  'بانتظار الاستلام': 'الطلبات بحالة «جديد» التي لم يستلمها أي مسؤول دعم بعد.',
+  'قيد المعالجة': 'الطلبات المستلمة والجاري العمل عليها حاليًا.',
+  'طلبات مغلقة': 'الطلبات التي حُلّت وأُغلقت.',
+  'نسبة الالتزام بـ SLA': 'الطلبات المكتملة دون إخفاق في SLA الاستجابة أو الحل ÷ الطلبات التي أمكن تقييمها × 100، خلال آخر 6 أشهر.',
+  'متوسط زمن الاستجابة الأولية': 'متوسط ساعات العمل من إرسال الطلب حتى استلامه من مسؤول الدعم، خلال آخر 6 أشهر.',
+  'متوسط زمن الحل': 'متوسط ساعات العمل من إرسال الطلب حتى تقديم الحل، بعد طرح ساعات التعليق، خلال آخر 6 أشهر.',
+  'الطلبات المتجاوزة SLA': 'عدد الطلبات التي أخفقت في SLA الاستجابة أو الحل خلال آخر 6 أشهر.',
+  'التزام SLA للاستجابة': 'الاستجابات الأولية الناجحة ÷ كل الطلبات التي اكتمل تقييم SLA الاستجابة لها × 100.',
+  'التزام SLA للحل': 'الحلول الناجحة ÷ كل الطلبات التي اكتمل تقييم SLA الحل لها × 100.',
+  'الطلبات المفتوحة': 'كل الطلبات غير المغلقة المرسلة خلال آخر 6 أشهر.',
+  'نسبة إعادة الفتح': 'الطلبات التي أعيد فتحها مرة واحدة على الأقل ÷ الطلبات التي قُدّم لها حل × 100، خلال آخر 6 أشهر.',
+  'متوسط رضا المستفيد': 'متوسط التقييمات المسجلة من 5 للطلبات المرسلة خلال آخر 6 أشهر.',
+  'الطلبات المسندة إليّ': 'كل الطلبات المسندة لك بجميع حالاتها.',
+  'الطلبات المغلقة': 'الطلبات المسندة لك التي حُلّت وأُغلقت.'
+};
+
 function statCard(
   iconName,
   number,
@@ -523,10 +735,13 @@ function statCard(
   featured = false,
   tone = 'total'
 ) {
+  const hint = STAT_HINTS[String(label).trim()] || '';
+
   return `
     <article
       class="stat-card ${featured ? 'featured' : ''}"
       data-tone="${escapeHTML(tone)}"
+      ${hint ? 'tabindex="0"' : ''}
     >
 
       <span class="stat-icon">
@@ -542,6 +757,8 @@ function statCard(
           ${label}
         </span>
       </div>
+
+      ${hint ? `<span class="stat-hint" role="tooltip">${escapeHTML(hint)}</span>` : ''}
 
     </article>
   `;
@@ -826,7 +1043,7 @@ function showToast(message, type = 'error') {
 }
  async function loadTicketMessages(ticket) {
   try {
-    const response = await fetch(
+    const response = await supportFetch(
       `/support/ticket/messages?ticket_number=${encodeURIComponent(
         ticket.id
       )}`
@@ -920,10 +1137,8 @@ function mountShell({
   topbar.innerHTML = `
     <div class="topbar-inner">
 
-      <a
+      <div
         class="brand"
-        href="#${items[0].key}"
-        data-route="${items[0].key}"
         aria-label="${escapeHTML(PORTAL_NAME)} — ${escapeHTML(BRAND_NAME)}"
       >
 
@@ -949,7 +1164,7 @@ function mountShell({
   </span>
     
 
-      </a>
+      </div>
 
       <nav
         class="main-nav"
@@ -1050,7 +1265,8 @@ function mountShell({
   الطلبات تأتي من Odoo.
  */
 const state = {
-  tickets: []
+  tickets: [],
+  analytics: null
 };
 
 const CURRENT_SUPPORT =
@@ -1101,7 +1317,7 @@ async function loadManagerTickets() {
   try {
 
     const response =
-      await fetch(
+      await supportFetch(
         '/support/manager/tickets',
         {
           method: 'GET',
@@ -1156,11 +1372,62 @@ async function loadManagerTickets() {
     return false;
   }
 }
+async function loadSupportAnalytics() {
+
+  try {
+
+    const response = await supportFetch(
+      '/support/analytics',
+      {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    const result =
+      await response.json();
+
+    if (
+      !response.ok
+      || !result.success
+    ) {
+
+      console.error(
+        'Support analytics error:',
+        result.message
+      );
+
+      state.analytics = null;
+
+      return false;
+    }
+
+   state.analytics = {
+   kpis: result.kpis || {},
+   charts: result.charts || {}
+};
+
+    return true;
+
+  } catch (error) {
+
+    console.error(
+      'Load support analytics error:',
+      error
+    );
+
+    state.analytics = null;
+
+    return false;
+  }
+}
 async function markNotificationRead(
   notificationId = null
 ) {
   try {
-    const response = await fetch(
+    const response = await supportFetch(
       '/support/notifications/read',
       {
         method: 'POST',
@@ -1267,11 +1534,19 @@ count.hidden =
                   item => `
                     <button
                       type="button"
-                      class="notification-item ${
-                        item.read
-                          ? ''
-                          : 'unread'
-                      }"
+                    class="notification-item ${
+  item.read
+    ? ''
+    : 'unread'
+} ${
+  item.slaLevel === 75
+    ? 'notification-sla-75'
+    : item.slaLevel === 90
+      ? 'notification-sla-90'
+      : item.slaLevel === 100
+        ? 'notification-sla-100'
+        : ''
+}"
                       data-notification="${item.id}"
                     >
 
@@ -1477,6 +1752,8 @@ await loadSupportNotifications();
   } else if (
     currentRoute === 'performance'
   ) {
+      await loadSupportAnalytics();
+
 
     renderPerformance();
 
@@ -1493,15 +1770,28 @@ await loadSupportNotifications();
  */
 function renderDashboard() {
 
+  const newCount = state.tickets.filter(t => t.status === 'جديد').length;
+  const nearSla = state.tickets.filter(t => {
+    const p = Number(t.sla_resolution_percent || 0);
+    return t.status === 'قيد المعالجة'
+      && !['failed', 'successful'].includes(t.sla_resolution_status)
+      && p >= 75 && p < 100;
+  }).length;
+
   app.innerHTML = `
 
-    <header class="page-head">
+    <header class="page-head page-head-welcome">
 
       <div>
 
         <h1>
           لوحة الدعم الفني
         </h1>
+
+        ${greetingHTML(CURRENT_SUPPORT, [
+          countLabel(newCount, 'طلب جديد', 'طلبات جديدة', 'is-new') && countLabel(newCount, 'طلب جديد', 'طلبات جديدة', 'is-new') + ' بانتظار الاستلام',
+          countLabel(nearSla, 'طلب واحد', 'طلبات', 'is-risk') && countLabel(nearSla, 'طلب واحد', 'طلبات', 'is-risk') + ' قارب تجاوز SLA'
+        ])}
 
       </div>
 
@@ -2223,7 +2513,7 @@ async function claimTicket(id) {
   try {
 
     const response =
-      await fetch(
+      await supportFetch(
         '/support/ticket/claim',
         {
           method: 'POST',
@@ -2289,7 +2579,7 @@ async function claimTicket(id) {
 }
 async function loadSupportNotifications() {
   try {
-    const response = await fetch(
+    const response = await supportFetch(
       '/support/notifications',
       {
         method: 'GET',
@@ -2322,7 +2612,8 @@ async function loadSupportNotifications() {
       text: notification.message,
       time: formatDateTime(notification.created_at),
       read: notification.is_read,
-      ticketId: notification.ticket_number
+      ticketId: notification.ticket_number,
+      slaLevel: Number(notification.sla_level || 0)
     }));
 
     return true;
@@ -2357,12 +2648,6 @@ async function renderDetail(id) {
   await loadTicketMessages(
     ticket
   );
-
-  if (supportBus) {
-    supportBus.addChannel(
-      `support_ticket_${ticket.id}`
-    );
-  }
 
   const canProcess =
   ticket.assignee_id === CURRENT_SUPPORT_ID &&
@@ -2537,6 +2822,7 @@ if (resumeButton) {
   );
 }
 
+startSlaCountdown();
 
 }
 
@@ -2606,7 +2892,7 @@ function bindChat({
 
       try {
         const response =
-          await fetch(
+          await supportFetch(
             '/support/ticket/message/send',
             {
               method: 'POST',
@@ -2958,7 +3244,7 @@ async function sendSolution(ticket) {
   try {
 
     const response =
-      await fetch(
+      await supportFetch(
         '/support/ticket/solution',
         {
           method: 'POST',
@@ -3043,7 +3329,7 @@ async function holdTicket(ticket) {
   if (!reason) {
 
     showToast(
-      'اختاري سبب تعليق الطلب',
+      'اختار سبب تعليق الطلب',
       'warning'
     );
 
@@ -3054,7 +3340,7 @@ async function holdTicket(ticket) {
   try {
 
     const response =
-      await fetch(
+      await supportFetch(
         '/support/ticket/hold',
         {
           method: 'POST',
@@ -3119,7 +3405,7 @@ async function resumeTicket(ticket) {
   try {
 
     const response =
-      await fetch(
+      await supportFetch(
         '/support/ticket/resume',
         {
           method: 'POST',
@@ -3175,57 +3461,31 @@ navigate(
     );
   }
 }
- function getPlatformSlaStats(tickets) {
 
-  let successful = 0;
-  let failed = 0;
 
-  tickets.forEach(ticket => {
+function renderSlaDonut(complianceData = {}) {
 
-    [
-      ticket.sla_response_status,
-      ticket.sla_resolution_status
-    ].forEach(status => {
+  const compliant =
+    Number(
+      complianceData.compliant || 0
+    );
 
-      if (status === 'successful') {
-        successful += 1;
-      }
-
-      if (status === 'failed') {
-        failed += 1;
-      }
-
-    });
-
-  });
+  const breached =
+    Number(
+      complianceData.breached || 0
+    );
 
   const total =
-    successful + failed;
+    compliant + breached;
 
   const compliance =
     total
       ? Math.round(
           (
-            successful / total
+            compliant / total
           ) * 100
         )
       : 0;
-
-  return {
-    successful,
-    failed,
-    total,
-    compliance
-  };
-}
-
-
-function renderSlaDonut(tickets) {
-
-  const stats =
-    getPlatformSlaStats(
-      tickets
-    );
 
   return `
     <article class="analytics-card">
@@ -3239,7 +3499,7 @@ function renderSlaDonut(tickets) {
           </h3>
 
           <p>
-            الالتزام العام بالاستجابة والحل
+            الالتزام العام باتفاقية مستوى الخدمة
           </p>
 
         </div>
@@ -3253,14 +3513,14 @@ function renderSlaDonut(tickets) {
           class="sla-donut"
           style="
             --sla-value:
-            ${stats.compliance}
+            ${compliance}
           "
         >
 
           <div class="sla-donut-center">
 
             <strong>
-              ${stats.compliance}%
+              ${compliance}%
             </strong>
 
             <span>
@@ -3279,11 +3539,11 @@ function renderSlaDonut(tickets) {
             <span class="legend-dot is-success"></span>
 
             <span>
-              محقق
+              ملتزم
             </span>
 
             <strong>
-              ${stats.successful}
+              ${compliant}
             </strong>
 
           </div>
@@ -3298,7 +3558,7 @@ function renderSlaDonut(tickets) {
             </span>
 
             <strong>
-              ${stats.failed}
+              ${breached}
             </strong>
 
           </div>
@@ -3310,177 +3570,97 @@ function renderSlaDonut(tickets) {
     </article>
   `;
 }
+function renderResponseTimeChart(data = {}) {
 
+  const labels =
+    Array.isArray(data.labels)
+      ? data.labels
+      : [];
 
-function renderSlaBarChart(tickets) {
-
-  const categories = {};
-
-  tickets.forEach(ticket => {
-
-    const category =
-      ticket.type || 'غير مصنف';
-
-    if (!categories[category]) {
-
-      categories[category] = {
-        successful: 0,
-        failed: 0
-      };
-
-    }
-
-    const hasFailed =
-      ticket.sla_response_status === 'failed'
-      || ticket.sla_resolution_status === 'failed';
-
-    const hasSuccessful =
-      !hasFailed
-      && (
-        ticket.sla_response_status === 'successful'
-        || ticket.sla_resolution_status === 'successful'
-      );
-
-    if (hasFailed) {
-      categories[
-        category
-      ].failed += 1;
-    }
-
-    else if (hasSuccessful) {
-      categories[
-        category
-      ].successful += 1;
-    }
-
-  });
-
-
-  const entries =
-    Object.entries(
-      categories
-    );
-
+  const values =
+    Array.isArray(data.values)
+      ? data.values.map(
+          value => Number(value || 0)
+        )
+      : [];
 
   const maxValue =
     Math.max(
       1,
-      ...entries.map(
-        ([, values]) =>
-          Math.max(
-            values.successful,
-            values.failed
-          )
-      )
+      ...values
     );
 
+  const formatMonth = value => {
+
+    const [year, month] =
+      String(value).split('-');
+
+    if (!year || !month) {
+      return value;
+    }
+
+    return new Intl.DateTimeFormat(
+      'ar-SA-u-ca-gregory-nu-latn',
+      {
+        month: 'short'
+      }
+    ).format(
+      new Date(
+        Number(year),
+        Number(month) - 1,
+        1
+      )
+    );
+  };
 
   return `
     <article class="analytics-card">
 
       <div class="analytics-card-head">
-
         <div>
-
-          <h3>
-            SLA حسب نوع الطلب
-          </h3>
-
-          <p>
-            مقارنة الطلبات الملتزمة والمتجاوزة
-          </p>
-
+          <h3>متوسط زمن الاستجابة الأولية</h3>
+          <p>متوسط ساعات العمل حتى استلام الطلب</p>
         </div>
-
       </div>
 
-
-      <div class="sla-bar-chart">
+      <div class="analytics-column-chart">
 
         ${
-          entries.length
+          labels.map(
+            (label, index) => {
 
-            ? entries.map(
-                ([category, values]) => `
-                  <div class="sla-bar-row">
+              const value =
+                Number(values[index] || 0);
 
-                    <span class="sla-bar-label">
-                      ${escapeHTML(category)}
-                    </span>
+              const height =
+                (
+                  value / maxValue
+                ) * 100;
 
+              return `
+                <div class="analytics-column-item">
 
-                    <div class="sla-bar-values">
-
-                      <div class="sla-bar-line">
-
-                        <span>
-                          محقق
-                        </span>
-
-                        <div class="sla-bar-track">
-
-                          <i
-                            class="sla-bar-fill is-success"
-                            style="
-                              width:
-                              ${
-                                (
-                                  values.successful
-                                  / maxValue
-                                ) * 100
-                              }%
-                            "
-                          ></i>
-
-                        </div>
-
-                        <strong>
-                          ${values.successful}
-                        </strong>
-
-                      </div>
-
-
-                      <div class="sla-bar-line">
-
-                        <span>
-                          متجاوز
-                        </span>
-
-                        <div class="sla-bar-track">
-
-                          <i
-                            class="sla-bar-fill is-failed"
-                            style="
-                              width:
-                              ${
-                                (
-                                  values.failed
-                                  / maxValue
-                                ) * 100
-                              }%
-                            "
-                          ></i>
-
-                        </div>
-
-                        <strong>
-                          ${values.failed}
-                        </strong>
-
-                      </div>
-
-                    </div>
-
+                  <div class="analytics-column-value">
+                    ${formatSlaHours(value)}
                   </div>
-                `
-              ).join('')
 
-            : `
-                <div class="analytics-empty">
-                  لا توجد بيانات كافية
+                  <div class="analytics-column-track">
+                    <i
+                      class="analytics-column-bar is-response"
+                      style="height:${height}%"
+                    ></i>
+                  </div>
+
+                  <span>
+                    ${escapeHTML(
+                      formatMonth(label)
+                    )}
+                  </span>
+
                 </div>
-              `
+              `;
+            }
+          ).join('')
         }
 
       </div>
@@ -3489,173 +3669,188 @@ function renderSlaBarChart(tickets) {
   `;
 }
 
+function renderResolutionTimeChart(data = {}) {
 
-function renderSlaTrend(tickets) {
-
-  const now =
-    new Date();
-
-  const months = [];
-
-  for (
-    let offset = 5;
-    offset >= 0;
-    offset -= 1
-  ) {
-
-    const date =
-      new Date(
-        now.getFullYear(),
-        now.getMonth() - offset,
-        1
-      );
-
-    months.push({
-      key:
-        `${date.getFullYear()}-${
-          String(
-            date.getMonth() + 1
-          ).padStart(
-            2,
-            '0'
-          )
-        }`,
-
-      label:
-        new Intl.DateTimeFormat(
-          'ar-SA-u-ca-gregory-nu-latn',
-          {
-            month: 'short'
-          }
-        ).format(date),
-
-      successful: 0,
-      failed: 0
-    });
-
-  }
-
-
-  tickets.forEach(ticket => {
-
-    if (!ticket.createdAt) {
-      return;
-    }
-
-    const date =
-      new Date(
-        ticket.createdAt
-      );
-
-    if (
-      Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return;
-    }
-
-    const key =
-      `${date.getFullYear()}-${
-        String(
-          date.getMonth() + 1
-        ).padStart(
-          2,
-          '0'
-        )
-      }`;
-
-    const month =
-      months.find(
-        item =>
-          item.key === key
-      );
-
-    if (!month) {
-      return;
-    }
-
-
-    [
-      ticket.sla_response_status,
-      ticket.sla_resolution_status
-    ].forEach(status => {
-
-      if (status === 'successful') {
-        month.successful += 1;
-      }
-
-      if (status === 'failed') {
-        month.failed += 1;
-      }
-
-    });
-
-  });
-
+  const labels =
+    Array.isArray(data.labels)
+      ? data.labels
+      : [];
 
   const values =
-    months.map(month => {
+    Array.isArray(data.values)
+      ? data.values.map(
+          value => Number(value || 0)
+        )
+      : [];
 
-      const total =
-        month.successful
-        + month.failed;
+  const maxValue =
+    Math.max(
+      1,
+      ...values
+    );
 
-      return total
-        ? Math.round(
-            (
-              month.successful
-              / total
-            ) * 100
-          )
-        : 0;
+  const formatMonth = value => {
 
-    });
+    const [year, month] =
+      String(value).split('-');
 
+    if (!year || !month) {
+      return value;
+    }
+
+    return new Intl.DateTimeFormat(
+      'ar-SA-u-ca-gregory-nu-latn',
+      {
+        month: 'short'
+      }
+    ).format(
+      new Date(
+        Number(year),
+        Number(month) - 1,
+        1
+      )
+    );
+  };
+
+  return `
+    <article class="analytics-card">
+
+      <div class="analytics-card-head">
+        <div>
+          <h3>متوسط زمن الحل</h3>
+          <p>متوسط ساعات العمل حتى تسجيل الحل</p>
+        </div>
+      </div>
+
+      <div class="analytics-column-chart">
+
+        ${
+          labels.map(
+            (label, index) => {
+
+              const value =
+                Number(values[index] || 0);
+
+              const height =
+                (
+                  value / maxValue
+                ) * 100;
+
+              return `
+                <div class="analytics-column-item">
+
+                  <div class="analytics-column-value">
+                    ${formatSlaHours(value)}
+                  </div>
+
+                  <div class="analytics-column-track">
+                    <i
+                      class="analytics-column-bar is-resolution"
+                      style="height:${height}%"
+                    ></i>
+                  </div>
+
+                  <span>
+                    ${escapeHTML(
+                      formatMonth(label)
+                    )}
+                  </span>
+
+                </div>
+              `;
+            }
+          ).join('')
+        }
+
+      </div>
+
+    </article>
+  `;
+}
+  
+function renderSlaTrend(trendData = {}) {
+
+  const labels =
+    Array.isArray(trendData.labels)
+      ? trendData.labels
+      : [];
+
+  const values =
+    Array.isArray(trendData.values)
+      ? trendData.values.map(
+          value => Number(value || 0)
+        )
+      : [];
 
   const width = 600;
   const height = 180;
   const padding = 20;
+  const count = Math.max(values.length, 1);
+  const colPct = 100 / count;
 
-
+  /* المنصة RTL: الشهر الأول في أقصى اليمين، وكل نقطة في منتصف عمود شهرها
+     تمامًا فوق تسميته — بلا أي عكس بالـ CSS */
   const points =
     values.map(
       (value, index) => {
 
-        const x =
-          padding
-          + (
-            index
-            / Math.max(
-              values.length - 1,
-              1
-            )
-          )
-          * (
-            width
-            - padding * 2
-          );
+        const pct =
+          (count - 1 - index + 0.5) * colPct;
+
+        const clamped =
+          Math.max(0, Math.min(100, value));
 
         const y =
           height
           - padding
-          - (
-            value / 100
-          )
-          * (
-            height
-            - padding * 2
-          );
+          - (clamped / 100)
+          * (height - padding * 2);
 
         return {
-          x,
+          x: (pct / 100) * width,
           y,
+          yPct: (y / height) * 100,
+          left: (count - 1 - index) * colPct,
           value
         };
-
       }
     );
 
+  const deltaInfo = index => {
+    if (index === 0) return null;
+    const diff = Math.round((values[index] - values[index - 1]) * 10) / 10;
+    const prev = formatMonth(labels[index - 1]);
+    if (!diff) return { cls: 'is-flat', text: `دون تغيير عن ${prev}` };
+    return {
+      cls: diff > 0 ? 'is-up' : 'is-down',
+      text: `${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)} نقطة عن ${prev}`
+    };
+  };
+
+  const formatMonth =
+    value => {
+
+      const [year, month] =
+        String(value).split('-');
+
+      if (!year || !month) {
+        return value;
+      }
+
+      const date =
+        new Date(
+          Number(year),
+          Number(month) - 1,
+          1
+        );
+
+      return new Intl.DateTimeFormat(
+        'ar-SA-u-ca-gregory-nu-latn',
+        {
+          month: 'short'
+        }
+      ).format(date);
+    };
 
   return `
     <article
@@ -3674,7 +3869,7 @@ function renderSlaTrend(tickets) {
           </h3>
 
           <p>
-            نسبة الالتزام خلال آخر 6 أشهر
+            نسبة الالتزام خلال آخر ${count} أشهر
           </p>
 
         </div>
@@ -3682,56 +3877,75 @@ function renderSlaTrend(tickets) {
       </div>
 
 
-      <div class="sla-line-chart">
+      <div class="sla-line-chart" style="--cols:${count}">
 
-        <svg
-          viewBox="0 0 ${width} ${height}"
-          preserveAspectRatio="none"
-          aria-label="اتجاه الالتزام بالـ SLA"
-        >
+        <div class="sla-line-plot">
 
-          <polyline
-            class="sla-line-path"
-            points="${
+          <svg
+            viewBox="0 0 ${width} ${height}"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <polyline
+              class="sla-line-path"
+              points="${
+                points.map(
+                  point =>
+                    `${point.x},${point.y}`
+                ).join(' ')
+              }"
+            ></polyline>
+          </svg>
+
+          <div class="sla-line-hits">
+            ${
               points.map(
-                point =>
-                  `${point.x},${point.y}`
-              ).join(' ')
-            }"
-          ></polyline>
+                (point, index) => {
+                  const month = escapeHTML(formatMonth(labels[index]));
+                  const delta = deltaInfo(index);
+                  return `
+                    <button
+                      type="button"
+                      class="sla-hit${index === points.length - 1 ? ' is-current' : ''}${point.yPct < 40 ? ' tip-below' : ''}"
+                      style="left:${point.left}%;width:${colPct}%"
+                      aria-label="${month}: ${point.value}%"
+                    >
+                      <i class="sla-dot" style="top:${point.yPct}%"></i>
+                      <span class="sla-tip" style="top:${point.yPct}%" role="tooltip">
+                        <b>${month}</b>
+                        <strong>${point.value}%</strong>
+                        ${delta ? `<small class="${delta.cls}">${escapeHTML(delta.text)}</small>` : ''}
+                      </span>
+                    </button>
+                  `;
+                }
+              ).join('')
+            }
+          </div>
 
-
-          ${
-            points.map(
-              point => `
-                <circle
-                  class="sla-line-point"
-                  cx="${point.x}"
-                  cy="${point.y}"
-                  r="4"
-                ></circle>
-              `
-            ).join('')
-          }
-
-        </svg>
+        </div>
 
 
         <div class="sla-line-labels">
 
           ${
-            months.map(
-              (month, index) => `
+            labels.map(
+              (label, index) => `
                 <span>
 
                   <small>
                     ${escapeHTML(
-                      month.label
+                      formatMonth(label)
                     )}
                   </small>
 
                   <strong>
-                    ${values[index]}%
+                    ${
+                      Number(
+                        values[index] || 0
+                      )
+                    }%
                   </strong>
 
                 </span>
@@ -3747,10 +3961,10 @@ function renderSlaTrend(tickets) {
   `;
 }
 
+function renderPlatformCharts() {
 
-function renderPlatformCharts(
-  tickets
-) {
+  const charts =
+    state.analytics?.charts || {};
 
   return `
     <section class="platform-analytics">
@@ -3767,15 +3981,19 @@ function renderPlatformCharts(
       <div class="platform-charts-grid">
 
         ${renderSlaDonut(
-          tickets
-        )}
-
-        ${renderSlaBarChart(
-          tickets
+          charts.compliance || {}
         )}
 
         ${renderSlaTrend(
-          tickets
+          charts.trend || {}
+        )}
+
+        ${renderResponseTimeChart(
+          charts.response_time || {}
+        )}
+
+        ${renderResolutionTimeChart(
+          charts.resolution_time || {}
         )}
 
       </div>
@@ -3783,12 +4001,14 @@ function renderPlatformCharts(
     </section>
   `;
 }
+
 /*
  * Performance
  */
 let performanceCurrentPage = 1;
 
 const PERFORMANCE_PAGE_SIZE = 10;
+let performanceView = 'mine';
 
 function renderPerformance() {
 
@@ -3923,6 +4143,55 @@ function renderPerformance() {
           </div>
         `
       : '';
+const analytics =
+  state.analytics || {};
+
+const kpis =
+  analytics.kpis || {};
+
+const slaCompliance =
+  kpis.sla_compliance
+  ?? '—';
+
+const averageResponse =
+  kpis.average_response_hours
+  != null
+    ? formatSlaHours(
+        kpis.average_response_hours
+      )
+    : '—';
+
+const averageResolution =
+  kpis.average_resolution_hours
+  != null
+    ? formatSlaHours(
+        kpis.average_resolution_hours
+      )
+    : '—';
+
+const breachedTickets =
+  kpis.breached_tickets
+  ?? '—';
+
+const responseCompliance =
+  kpis.response_sla_compliance
+  ?? '—';
+
+const resolutionCompliance =
+  kpis.resolution_sla_compliance
+  ?? '—';
+
+const openTickets =
+  kpis.open_tickets
+  ?? '—';
+
+const reopenRate =
+  kpis.reopen_rate
+  ?? '—';
+
+const averageRating =
+  kpis.average_rating
+  ?? '—';
 
   app.innerHTML = `
 
@@ -3934,56 +4203,135 @@ function renderPerformance() {
       سجل الإنجاز
     </h1>
 
- <p>
-  ${escapeHTML(CURRENT_SUPPORT)}
-  — أدائي وأداء المنصة
-</p>
   </div>
 
 </header>
+<div class="performance-toggle">
 
+  <button
+    type="button"
+    class="performance-toggle-button ${
+      performanceView === 'mine'
+        ? 'active'
+        : ''
+    }"
+    data-performance-view="mine"
+  >
+    أدائي
+  </button>
 
-    <section
-      class="performance-grid"
-      aria-label="مؤشرات الإنجاز"
-    >
+  <button
+    type="button"
+    class="performance-toggle-button ${
+      performanceView === 'platform'
+        ? 'active'
+        : ''
+    }"
+    data-performance-view="platform"
+  >
+    أداء المنصة
+  </button>
 
-      ${statCard(
-        'tickets',
-        owned.length,
-        'الطلبات المسندة إليّ'
-      )}
+</div>
 
-      ${statCard(
-        'check',
-        closed.length,
-        'الطلبات المغلقة',
-        false,
-        'closed'
-      )}
+${
+  performanceView === 'platform'
+    ? `
 
-      ${statCard(
-        'star',
-        `
-          <bdi dir="ltr">
-            ${average}
-            ${
-              average !== '—'
-                ? ' / 5'
-                : ''
-            }
-          </bdi>
-        `,
-        'متوسط التقييم',
-        false,
-        'rating'
-      )}
+   <section
+  class="performance-grid performance-grid-platform"
+  aria-label="مؤشرات أداء المنصة"
+>
+        ${statCard(
+          'chart',
+          slaCompliance === '—'
+            ? '—'
+            : `${slaCompliance}%`,
+          'نسبة الالتزام بـ SLA',
+          false,
+          'closed'
+        )}
 
-    </section>
+        ${statCard(
+          'clock',
+          averageResponse,
+          'متوسط زمن الاستجابة الأولية',
+          false,
+          'new'
+        )}
 
-${renderPlatformCharts(
-  state.tickets
-)}
+        ${statCard(
+          'clock',
+          averageResolution,
+          'متوسط زمن الحل',
+          false,
+          'total'
+        )}
+
+        ${statCard(
+          'clock',
+          breachedTickets,
+          'الطلبات المتجاوزة SLA',
+          false,
+          'breached'
+        )}
+
+      </section>
+
+${renderPlatformCharts()}
+
+    `
+    : ''
+}
+${
+  performanceView === 'mine'
+    ? `
+
+ <section
+  class="performance-grid performance-grid-mine"
+  aria-label="مؤشرات أدائي"
+>
+
+        ${statCard(
+          'tickets',
+          owned.length,
+          'الطلبات المسندة إليّ'
+        )}
+
+        ${statCard(
+          'check',
+          closed.length,
+          'الطلبات المغلقة',
+          false,
+          'closed'
+        )}
+
+        ${statCard(
+          'star',
+          `
+            <bdi dir="ltr">
+              ${average}
+              ${
+                average !== '—'
+                  ? ' / 5'
+                  : ''
+              }
+            </bdi>
+          `,
+          'متوسط التقييم',
+          false,
+          'rating'
+        )}
+
+      </section>
+
+    `
+    : ''
+}
+${
+  performanceView === 'mine'
+    ? `
+
     <section
       class="
         surface
@@ -4008,7 +4356,8 @@ ${renderPlatformCharts(
           <thead>
 
             <tr>
-              <th>الطلب</th>
+<th>رقم الطلب</th>
+<th>موضوع الطلب</th>
               <th>تاريخ الإنشاء</th>
               <th>التقييم</th>
               <th>الإجراء</th>
@@ -4028,24 +4377,21 @@ ${renderPlatformCharts(
 
                         <tr>
 
-                          <td
-                            class="request-title"
-                            data-label="الطلب"
-                          >
+                        <td data-label="رقم الطلب">
+  <span class="request-code">
+    ${escapeHTML(ticket.id)}
+  </span>
+</td>
 
-                            <strong>
-                              ${escapeHTML(
-                                ticket.title
-                              )}
-                            </strong>
-
-                            <small>
-                              ${escapeHTML(
-                                ticket.id
-                              )}
-                            </small>
-
-                          </td>
+<td
+  class="request-title"
+  data-label="موضوع الطلب"
+>
+  <strong>
+    ${escapeHTML(ticket.title)}
+  </strong>
+  ${ticket.type ? `<small>${escapeHTML(ticket.type)}</small>` : ''}
+</td>
 
 
                           <td
@@ -4221,8 +4567,7 @@ ${renderPlatformCharts(
                     </tr>
                   `
             }
-
-          </tbody>
+     </tbody>
 
         </table>
 
@@ -4231,8 +4576,40 @@ ${renderPlatformCharts(
       ${paginationHTML}
 
     </section>
-  `;
+    `
+    : ''
+}
+`;
 
+app
+  .querySelectorAll(
+    '[data-performance-view]'
+  )
+  .forEach(button => {
+
+    button.addEventListener(
+      'click',
+      () => {
+
+        const nextView =
+          button.dataset.performanceView;
+
+        if (
+          nextView === performanceView
+        ) {
+          return;
+        }
+
+        performanceView =
+          nextView;
+
+        performanceCurrentPage = 1;
+
+        renderPerformance();
+      }
+    );
+
+  });
 
   app
     .querySelectorAll(
@@ -4410,7 +4787,6 @@ ${renderPlatformCharts(
  */
 if (isManagerPage) {
 
-  /* يحصر تنسيقات المنصة في صفحاتها ولا يمسّ بقية موقع Odoo */
   document.body.classList.add('iu-portal');
 
   window.addEventListener(
@@ -4434,3 +4810,230 @@ if (isManagerPage) {
 
   render();
 }
+
+(function () {
+  'use strict';
+  // support.js و employee.js كلاهما في web.assets_frontend، فالحارس يمنع التشغيل مرتين
+  if (window.__iuMotion) return;
+  window.__iuMotion = true;
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  const seen = new Map(); // signature -> true
+  const lastNumbers = new Map(); // stat label -> number
+
+  const ENTER = [
+    '.page-head',
+    '.stats-grid > .stat-card',
+    '.performance-grid > .stat-card',
+    '.platform-charts-grid > .analytics-card',
+    '.detail-hero',
+    '.ticket-progress',
+    '.summary-strip',
+    '.surface',
+    '.entry-option'
+  ];
+
+  const sig = el => (el.className + '|' + el.textContent.replace(/\s+/g, ' ').trim()).slice(0, 400);
+
+  function isNew(el) {
+    const key = sig(el);
+    if (seen.has(key)) return false;
+    seen.set(key, true);
+    if (seen.size > 600) seen.delete(seen.keys().next().value);
+    return true;
+  }
+
+  function enter(root) {
+    const groups = new Map();
+    root.querySelectorAll(ENTER.join(',')).forEach(el => {
+      if (el.dataset.mDone) return;
+      el.dataset.mDone = '1';
+      if (!isNew(el)) return;
+      const parent = el.parentElement;
+      const i = groups.get(parent) || 0;
+      groups.set(parent, i + 1);
+      el.style.setProperty('--i', Math.min(i, 8));
+      el.classList.add('m-enter');
+      el.addEventListener('animationend', () => el.classList.remove('m-enter'), { once: true });
+    });
+
+    root.querySelectorAll('.data-table tbody').forEach(tb => {
+      if (tb.dataset.mDone) return;
+      tb.dataset.mDone = '1';
+      if (!isNew(tb)) return;
+      [...tb.rows].slice(0, 12).forEach((tr, i) => {
+        tr.style.setProperty('--i', i);
+        tr.classList.add('m-enter');
+        tr.addEventListener('animationend', () => tr.classList.remove('m-enter'), { once: true });
+      });
+    });
+  }
+
+  const NUM = /(\d+(?:[.,]\d+)?)/;
+
+  function countUp(root) {
+    root.querySelectorAll('.stat-card strong, .sla-donut-center strong').forEach(el => {
+      if (el.dataset.mCount) return;
+      el.dataset.mCount = '1';
+
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode()) && !NUM.test(node.nodeValue)) {}
+      if (!node) return;
+
+      const text = node.nodeValue;
+      const m = text.match(NUM);
+      const raw = m[1];
+      const target = parseFloat(raw.replace(',', '.'));
+      if (!isFinite(target) || target === 0) return;
+
+      const card = el.closest('.stat-card, .analytics-card');
+      const label = card ? card.textContent.replace(/[\d.,%\s]+/g, ' ').trim() : '';
+      const prev = lastNumbers.has(label) ? lastNumbers.get(label) : 0;
+      lastNumbers.set(label, target);
+      if (prev === target || reduce.matches) return;
+
+      const decimals = (raw.split(/[.,]/)[1] || '').length;
+      const sep = raw.includes(',') ? ',' : '.';
+      const before = text.slice(0, m.index);
+      const after = text.slice(m.index + raw.length);
+      const dur = 900;
+      const t0 = performance.now();
+
+      const fmt = v => v.toFixed(decimals).replace('.', sep);
+      const tick = now => {
+        const p = Math.min(1, (now - t0) / dur);
+        const e = 1 - Math.pow(1 - p, 3);
+        node.nodeValue = before + fmt(prev + (target - prev) * e) + after;
+        if (p < 1) requestAnimationFrame(tick);
+        else node.nodeValue = text;
+      };
+      node.nodeValue = before + fmt(prev) + after;
+      requestAnimationFrame(tick);
+    });
+  }
+
+  /* ---------- الرسوم البيانية ---------- */
+  function charts(root) {
+    root.querySelectorAll('.analytics-card').forEach(card => {
+      if (card.dataset.mChart) return;
+      card.dataset.mChart = '1';
+      if (!isNew(card) || reduce.matches) return;
+
+      card.querySelectorAll('.analytics-column-item').forEach((item, i) => {
+        item.style.setProperty('--i', i);
+        item.querySelectorAll('.analytics-column-bar, .analytics-column-value')
+          .forEach(n => n.style.setProperty('--i', i));
+      });
+      card.querySelectorAll('.sla-bar-fill').forEach((n, i) => n.style.setProperty('--i', i));
+      card.querySelectorAll('.sla-line-point').forEach((n, i) => n.style.setProperty('--i', i));
+
+      const path = card.querySelector('.sla-line-path');
+      if (path && path.getTotalLength) {
+        try {
+          const len = Math.ceil(path.getTotalLength()) + 2;
+          path.style.setProperty('--len', len);
+        } catch (e) { }
+      }
+
+      card.classList.add('m-chart');
+      io.observe(card);
+    });
+
+    // ربط نقاط الخط بتسمياتها عند تمرير المؤشر
+    root.querySelectorAll('.sla-line-chart').forEach(chart => {
+      if (chart.dataset.mLink) return;
+      chart.dataset.mLink = '1';
+      const pts = chart.querySelectorAll('.sla-line-point');
+      const lbl = chart.querySelectorAll('.sla-line-labels span');
+      const set = (i, on) => {
+        pts[i] && pts[i].classList.toggle('is-hot', on);
+        lbl[i] && lbl[i].classList.toggle('is-hot', on);
+      };
+      lbl.forEach((l, i) => {
+        l.addEventListener('pointerenter', () => set(i, true));
+        l.addEventListener('pointerleave', () => set(i, false));
+      });
+      pts.forEach((p, i) => {
+        p.addEventListener('pointerenter', () => set(i, true));
+        p.addEventListener('pointerleave', () => set(i, false));
+      });
+    });
+  }
+
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(en => {
+      if (!en.isIntersecting) return;
+      const card = en.target;
+      io.unobserve(card);
+      // الأعمدة والدونات تعمل بـ CSS مباشرة؛ الخط يحتاج إطارًا واحدًا
+      requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add('m-drawn')));
+      setTimeout(() => card.classList.remove('m-chart'), 2200);
+    });
+  }, { threshold: .25 });
+
+  /* ----------   للمؤشر ---------- */
+  const SPOT = '.stat-card, .analytics-card, .entry-option';
+  let raf = 0;
+  document.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse' || raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const el = e.target.closest && e.target.closest(SPOT);
+      if (!el || !el.closest('#app, .portal-entry')) return;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      el.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    });
+  }, { passive: true });
+
+  /* ---------- جرس الإشعارات ---------- */
+  let lastCount = null;
+  function bell() {
+    const badge = document.querySelector('#topbar .notification-count');
+    const n = badge ? parseInt(badge.textContent, 10) || 0 : 0;
+    if (lastCount !== null && n > lastCount && !reduce.matches) {
+      const btn = badge.closest('.icon-button');
+      if (btn) {
+        btn.classList.remove('m-ring');
+        void btn.offsetWidth;
+        btn.classList.add('m-ring');
+        setTimeout(() => btn.classList.remove('m-ring'), 800);
+      }
+    }
+    lastCount = n;
+  }
+
+  /* ---------- المراقبة ---------- */
+  function run() {
+    const app = document.getElementById('app');
+    const entry = document.querySelector('.portal-entry');
+    [app, entry].forEach(root => {
+      if (!root) return;
+      enter(root);
+      countUp(root);
+      charts(root);
+    });
+    bell();
+  }
+
+  let pending = 0;
+  const schedule = () => {
+    if (pending) return;
+    pending = requestAnimationFrame(() => { pending = 0; run(); });
+  };
+
+  function start() {
+    if (!document.querySelector('#app.page-shell, .portal-entry')) return;
+    document.documentElement.classList.add('iu-motion');
+    run();
+    ['app', 'topbar'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) new MutationObserver(schedule).observe(el, { childList: true, subtree: true });
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();

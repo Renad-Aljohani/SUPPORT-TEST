@@ -1,6 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <record id="support_category_inquiry" model="support.category">
+    <record id="support_category_consultation" model="support.category">
         <field name="name">استفسار</field>
     </record>
 
@@ -15,10 +16,4 @@
     <record id="support_category_requirements" model="support.category">
         <field name="name">جمع متطلبات</field>
     </record>
-
-    <record id="support_category_maintenance" model="support.category">
-        <field name="name">صيانة</field>
-        <field name="active">False</field>
-    </record>
-
 </odoo>

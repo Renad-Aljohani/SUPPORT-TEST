@@ -1,13 +1,59 @@
 import base64
-from urllib.parse import quote
+from collections import defaultdict
+from pathlib import Path
+
+from dateutil.relativedelta import relativedelta
+from psycopg2 import IntegrityError
+
 from odoo import http, fields
-from odoo.http import request
-from odoo.tools import html2plaintext
+from odoo.http import content_disposition, request
+from odoo.tools import html2plaintext, html_escape
+from odoo.tools.mimetypes import guess_mimetype
 from odoo.exceptions import ValidationError
-from datetime import timedelta
+
+
+GROUP_SUPPORT_EMPLOYEE = 'website.group_support_employee'
+GROUP_SUPPORT_MANAGER = 'website.group_support_manager'
+
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024
+
+ALLOWED_ATTACHMENT_TYPES = {
+    'application/pdf': {'.pdf'},
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
+        '.docx',
+    },
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+        '.xlsx',
+    },
+    'image/png': {'.png'},
+    'image/jpeg': {'.jpg', '.jpeg'},
+    'video/mp4': {'.mp4'},
+    'video/quicktime': {'.mov'},
+}
 
 
 class SupportController(http.Controller):
+
+    @staticmethod
+    def _positive_int(value):
+        try:
+            parsed_value = int(value)
+        except (TypeError, ValueError):
+            return None
+
+        return parsed_value if parsed_value > 0 else None
+
+    @staticmethod
+    def _attachment_filename(attachment_file):
+        filename = (
+            attachment_file.filename
+            or 'attachment'
+        ).strip()
+        return filename.replace('\\', '/').rsplit('/', 1)[-1]
+
+    @staticmethod
+    def _lock_ticket(ticket):
+        ticket._lock_for_update()
 
     def _add_ticket_history(
         self,
@@ -23,7 +69,7 @@ class SupportController(http.Controller):
             'action': action,
             'old_status': old_status,
             'new_status': new_status,
-            'note': note or '',
+            'note': (note or '').strip(),
         })
 
     def _validate_attachment(self, attachment_file):
@@ -33,57 +79,173 @@ class SupportController(http.Controller):
         ):
             return True, b''
         
-        max_file_size = 10 * 1024 * 1024
+        filename = (
+            attachment_file.filename
+            or ''
+        ).strip()
 
-        allowed_mimetypes = {
-            'application/pdf',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'image/png',
-            'image/jpeg',
-            'video/mp4',
-            'video/quicktime',
-        }
+        if (
+            not filename
+            or len(filename) > 255
+            or any(
+                character in filename
+                for character in ('\r', '\n', '\x00')
+            )
+        ):
+            return False, 'اسم الملف غير صحيح.'
 
-        file_content = attachment_file.read()
+        claimed_mimetype = (
+            attachment_file.mimetype
+            or ''
+        ).split(';', 1)[0].strip().lower()
 
-        if len(file_content) > max_file_size:
+        allowed_extensions = ALLOWED_ATTACHMENT_TYPES.get(
+            claimed_mimetype
+        )
+
+        if not allowed_extensions:
+            return False, 'نوع الملف غير مسموح.'
+
+        safe_filename = self._attachment_filename(
+            attachment_file
+        )
+        extension = Path(safe_filename).suffix.lower()
+
+        if extension not in allowed_extensions:
+            return False, 'امتداد الملف لا يتوافق مع نوعه.'
+
+        file_content = attachment_file.read(
+            MAX_ATTACHMENT_SIZE + 1
+        )
+
+        if len(file_content) > MAX_ATTACHMENT_SIZE:
             return (
                 False,
                 'حجم الملف يجب ألا يتجاوز 10 ميجابايت.'
             )
 
+        if not file_content:
+            return False, 'الملف فارغ.'
+
+        detected_mimetype = guess_mimetype(
+            file_content,
+            default='application/octet-stream',
+        )
+
+        # MP4 وMOV يستخدمان حاوية ISO Base Media نفسها.
         if (
-            attachment_file.mimetype
-            not in allowed_mimetypes
+            len(file_content) >= 12
+            and file_content[4:8] == b'ftyp'
         ):
-            return (
-                False,
-                'نوع الملف غير مسموح.'
+            detected_mimetype = (
+                'video/quicktime'
+                if file_content[8:12] == b'qt  '
+                else 'video/mp4'
             )
+
+        if detected_mimetype != claimed_mimetype:
+            return False, 'محتوى الملف لا يتوافق مع نوعه.'
 
         return True, file_content
 
     def _is_support_employee(self):
         return request.env.user.has_group(
-            'website.group_support_employee'
+            GROUP_SUPPORT_EMPLOYEE
         )
 
     def _is_support_manager(self):
         return request.env.user.has_group(
-            'website.group_support_manager'
+            GROUP_SUPPORT_MANAGER
         )
 
     def _is_support_user(self):
         return (
             self._is_support_employee()
             or self._is_support_manager()
-        )   
+        )
+
+    def _get_current_employee(self):
+        return request.env['hr.employee'].sudo().search(
+            [
+                ('user_id', '=', request.env.user.id),
+                (
+                    'company_id',
+                    'in',
+                    [False, request.env.company.id],
+                ),
+            ],
+            limit=1,
+        )
+
+    def _ticket_related_data(self, tickets):
+        rating_by_ticket = {}
+        history_by_ticket = defaultdict(list)
+        attachment_by_ticket = {}
+
+        if not tickets:
+            return (
+                rating_by_ticket,
+                history_by_ticket,
+                attachment_by_ticket,
+            )
+
+        ratings = request.env['support.rating'].search(
+            [('ticket_id', 'in', tickets.ids)]
+        )
+        for rating in ratings:
+            rating_by_ticket.setdefault(
+                rating.ticket_id.id,
+                rating,
+            )
+
+        histories = request.env['support.ticket.history'].search(
+            [('ticket_id', 'in', tickets.ids)],
+            order='create_date asc, id asc',
+        )
+        for history in histories:
+            history_by_ticket[history.ticket_id.id].append(history)
+
+        attachments = request.env['ir.attachment'].sudo().search(
+            [
+                ('res_model', '=', 'support.ticket'),
+                ('res_id', 'in', tickets.ids),
+            ],
+            order='id desc',
+        )
+        for attachment in attachments:
+            attachment_by_ticket.setdefault(
+                attachment.res_id,
+                attachment,
+            )
+
+        return (
+            rating_by_ticket,
+            history_by_ticket,
+            attachment_by_ticket,
+        )
+
+    @http.route(
+        '/support/csrf',
+        type='http',
+        auth='user',
+        methods=['GET'],
+        website=False,
+    )
+    def support_csrf(self, **kwargs):
+        if not self._is_support_user():
+            return request.not_found()
+
+        response = request.make_json_response({
+            'csrf_token': request.csrf_token(),
+        })
+        response.headers['Cache-Control'] = 'no-store'
+        return response
 
     @http.route(
         '/support',
         type='http',
         auth='user',
+        methods=['GET'],
         website=True
     )
     def support_home(self, **kwargs):
@@ -110,6 +272,7 @@ class SupportController(http.Controller):
         '/support/employee',
         type='http',
         auth='user',
+        methods=['GET'],
         website=True
     )
     def support_employee(self, **kwargs):
@@ -120,37 +283,19 @@ class SupportController(http.Controller):
         ):
             return request.not_found()
 
-        # TODO:
-        # سجل الموظف المرتبط بالمستخدم الحالي
-        # employee = request.env[
-        #     'hr.employee'
-        # ].sudo().search(
-        #     [
-        #         (
-        #             'user_id',
-        #             '=',
-        #             user.id
-        #         )
-        #     ],
-        #     limit=1
-        # )
-        #
-        # إدارة صاحب الطلب
-        # department_name = (
-        #     employee.department_id.name
-        #     if employee
-        #     and employee.department_id
-        #     else ''
-        # )
-
-        # مؤقتًا على جهاز التطوير
-        department_name = 'المالية'
+        employee = self._get_current_employee()
+        department_name = (
+            employee.department_id.name
+            if employee and employee.department_id
+            else ''
+        )
 
         return request.render(
             'website.employee',
             {
                 'current_user_name': user.name,
                 'current_department': department_name,
+                'csrf_token': request.csrf_token(),
             }
         )
 
@@ -170,6 +315,7 @@ class SupportController(http.Controller):
             {
                 'current_support_name': request.env.user.name,
                  'current_support_id': request.env.user.id,
+                'csrf_token': request.csrf_token(),
             }
         )
     @http.route(
@@ -178,7 +324,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
     def hold_support_ticket(self, **kwargs):
         if not request.env.user.has_group(
@@ -222,6 +367,15 @@ class SupportController(http.Controller):
                 status=400
             )
 
+        if len(reason) > 1000:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'سبب التعليق يتجاوز الحد المسموح.',
+                },
+                status=400,
+            )
+
         ticket = request.env[
             'support.ticket'
         ].search(
@@ -243,6 +397,8 @@ class SupportController(http.Controller):
                 },
                 status=404
             )
+
+        self._lock_ticket(ticket)
 
         if ticket.assignee_id != request.env.user:
             return request.make_json_response(
@@ -289,7 +445,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
     def resume_support_ticket(self, **kwargs):
         if not request.env.user.has_group(
@@ -342,6 +497,8 @@ class SupportController(http.Controller):
                 status=404
             )
 
+        self._lock_ticket(ticket)
+
         if ticket.assignee_id != request.env.user:
             return request.make_json_response(
                 {
@@ -382,7 +539,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['GET'],
         website=True,
-        csrf=False
     )
     def get_support_notifications(self, **kwargs):
         partner = request.env.user.partner_id
@@ -406,6 +562,18 @@ class SupportController(http.Controller):
 
         for notification in notifications:
             message = notification.mail_message_id
+            subject = message.subject or ''
+
+            sla_level = 0
+
+            if subject.startswith('تنبيه SLA'):
+                sla_level = 75
+
+            elif subject.startswith('تحذير SLA'):
+                sla_level = 90
+
+            elif subject.startswith('تجاوز SLA'):
+                sla_level = 100
 
             ticket = request.env[
                 'support.ticket'
@@ -430,6 +598,7 @@ class SupportController(http.Controller):
                     else ''
                 ),
                 'is_read': notification.is_read,
+                'sla_level': sla_level,
                 'created_at': (
                     fields.Datetime.context_timestamp(
                         request.env.user,
@@ -452,7 +621,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
     def mark_support_notifications_read(self, **kwargs):
         data = request.httprequest.get_json(
@@ -462,6 +630,20 @@ class SupportController(http.Controller):
         notification_id = data.get(
             'notification_id'
         )
+
+        if notification_id is not None:
+            notification_id = self._positive_int(
+                notification_id
+            )
+
+            if not notification_id:
+                return request.make_json_response(
+                    {
+                        'success': False,
+                        'message': 'رقم الإشعار غير صحيح.',
+                    },
+                    status=400,
+                )
 
         partner = request.env.user.partner_id
 
@@ -476,7 +658,7 @@ class SupportController(http.Controller):
 
         if notification_id:
             domain.append(
-                ('id', '=', int(notification_id))
+                ('id', '=', notification_id)
             )
 
         notifications = request.env[
@@ -498,7 +680,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
 
     def create_support_ticket(self, **kwargs):
@@ -519,6 +700,7 @@ class SupportController(http.Controller):
             data = json_data
         else:
             data = request.httprequest.form.to_dict()
+            print("CREATE DATA =", data)
 
         title = (
             data.get('title') or ''
@@ -550,8 +732,20 @@ class SupportController(http.Controller):
                 },
                 status=400
             )
+
+        if len(title) > 200 or len(description) > 10000:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'عنوان الطلب أو وصفه يتجاوز الحد المسموح.',
+                },
+                status=400,
+            )
         category = request.env['support.category'].search(
-            [('name', '=', category_name)],
+            [
+                ('name', '=', category_name),
+                ('active', '=', True),
+            ],
             limit=1
         )
 
@@ -603,54 +797,43 @@ class SupportController(http.Controller):
                 )
 
             file_content = result
-        
 
-        priority_map = {
-          'منخفضة': 'low',
-          'متوسطة': 'medium',
-          'عالية': 'high',
-}
-    
-        
-        # TODO: 
-        #  إدارة صاحب الطلب من سجل الموظف
-        # employee = request.env[
-        #     'hr.employee'
-        # ].sudo().search(
-        #     [
-        #         (
-        #             'user_id',
-        #             '=',
-        #             request.env.user.id
-        #         )
-        #     ],
-        #     limit=1
-        # )
-        #
-        # department_id = (
-        #     employee.department_id.id
-        #     if employee
-        #     and employee.department_id
-        #     else False
-        # )
+        allowed_priorities = {
+            'low',
+            'medium',
+            'high',
+        }
 
+        if priority_value not in allowed_priorities:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'أولوية الطلب غير صحيحة.',
+                },
+                status=400,
+            )
 
-                            
-        ticket = request.env['support.ticket'].create({
+        priority = priority_value
+
+        employee = self._get_current_employee()
+        ticket_values = {
             'ticket_number': ticket_number,
             'title': title,
             'description': description,
             'category_id': category.id,
-            'priority': priority_map.get(
-                priority_value,
-                'medium'
-            ),
+            'priority': priority,
             'status': 'new',
             'requester_id': request.env.user.id,
-        # TODO:    
-        # 'department_id': department_id,
-        })
+            'submitted_at': fields.Datetime.now(),
+        }
 
+        if employee and employee.department_id:
+            ticket_values['department_id'] = employee.department_id.id
+
+        ticket = request.env['support.ticket'].create(ticket_values)
+        ticket._apply_sla_policy()
+
+        
         self._add_ticket_history(
             ticket=ticket,
             action='create',
@@ -708,7 +891,9 @@ class SupportController(http.Controller):
                 request.env['ir.attachment']
                 .sudo()
                 .create({
-                    'name': attachment_file.filename,
+                    'name': self._attachment_filename(
+                        attachment_file
+                    ),
                     'type': 'binary',
                     'datas': base64.b64encode(
                         file_content
@@ -737,6 +922,7 @@ class SupportController(http.Controller):
         '/support/attachment/<int:attachment_id>',
         type='http',
         auth='user',
+        methods=['GET'],
         website=False
     )
     def open_support_attachment(self, attachment_id, **kwargs):
@@ -755,11 +941,12 @@ class SupportController(http.Controller):
 
         ticket = request.env[
             'support.ticket'
-        ].sudo().browse(
-            attachment.res_id
+        ].search(
+            [('id', '=', attachment.res_id)],
+            limit=1,
         )
 
-        if not ticket.exists():
+        if not ticket:
             return request.not_found()
 
         user = request.env.user
@@ -791,10 +978,6 @@ class SupportController(http.Controller):
             attachment.datas
         )
 
-        filename = quote(
-            attachment.name or 'attachment'
-        )
-
         return request.make_response(
             file_content,
             headers=[
@@ -805,8 +988,13 @@ class SupportController(http.Controller):
                 ),
                 (
                     'Content-Disposition',
-                    f'attachment; filename="{filename}"'
+                    content_disposition(
+                        attachment.name or 'attachment'
+                    )
                 ),
+                ('Cache-Control', 'private, no-store'),
+                ('X-Content-Type-Options', 'nosniff'),
+                ('Content-Security-Policy', "default-src 'none'"),
             ]
         )
     @http.route(
@@ -815,7 +1003,6 @@ class SupportController(http.Controller):
     auth='user',
     methods=['POST'],
     website=True,
-    csrf=False
    )
     def save_support_draft(self, **kwargs):
         if not self._is_support_employee():
@@ -827,33 +1014,76 @@ class SupportController(http.Controller):
                 status=403
             )
         data = request.httprequest.form.to_dict()
+        print("DRAFT DATA =", data)
        
         draft_id = data.get('draft_id')
+
+        if draft_id:
+            draft_id = self._positive_int(draft_id)
+
+            if not draft_id:
+                return request.make_json_response(
+                    {
+                        'success': False,
+                        'message': 'رقم المسودة غير صحيح.',
+                    },
+                    status=400,
+                )
 
         title = (data.get('title') or '').strip()
         description = (data.get('description') or '').strip()
         category_name = (data.get('category') or '').strip()
         priority_value = (data.get('priority') or '').strip()
 
+        if len(title) > 200 or len(description) > 10000:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'عنوان المسودة أو وصفها يتجاوز الحد المسموح.',
+                },
+                status=400,
+            )
+
         category = False
 
 
         if category_name:
             category = request.env['support.category'].search(
-            [('name', '=', category_name)],
-            limit=1
-        )
+                [
+                    ('name', '=', category_name),
+                    ('active', '=', True),
+                ],
+                limit=1,
+            )
+
+            if not category:
+                return request.make_json_response(
+                    {
+                        'success': False,
+                        'message': 'تصنيف الطلب غير موجود.',
+                    },
+                    status=400,
+                )
         attachment_file = request.httprequest.files.get(
             'attachment' 
         )
         file_content = b''
         
 
-        priority_map = {
-        'منخفضة': 'low',
-        'متوسطة': 'medium',
-        'عالية': 'high',
+        allowed_priorities = {
+             'low',
+             'medium',
+              'high'
         }
+
+        if priority_value and priority_value not in allowed_priorities:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'أولوية الطلب غير صحيحة.',
+                },
+                status=400,
+            )
 
         if (
             attachment_file
@@ -875,27 +1105,7 @@ class SupportController(http.Controller):
             file_content = result
 
 
-        # TODO: عند نقل المشروع إلى بيئة المؤسسة
-        # جلب إدارة صاحب الطلب من سجل الموظف
-        # employee = request.env[
-        #     'hr.employee'
-        # ].sudo().search(
-        #     [
-        #         (
-        #             'user_id',
-        #             '=',
-        #             request.env.user.id
-        #         )
-        #     ],
-        #     limit=1
-        # )
-        #
-        # department_id = (
-        #     employee.department_id.id
-        #     if employee
-        #     and employee.department_id
-        #     else False
-        # )
+        employee = self._get_current_employee()
 
         values = {
             'title': title or False,
@@ -905,23 +1115,19 @@ class SupportController(http.Controller):
                 if category
                 else False
             ),
-            'priority': (
-                priority_map.get(priority_value)
-                if priority_value
-                else False
-            ),
+             'priority': priority_value or False,
             'status': 'draft',
             'requester_id': request.env.user.id,
-
-            # TODO: فعّليه عند نقل المشروع للمؤسسة
-            # 'department_id': department_id,
         }
+
+        if employee and employee.department_id:
+            values['department_id'] = employee.department_id.id
 
         # تعديل مسودة موجودة
         if draft_id:
             draft = request.env['support.ticket'].search(
                 [
-                    ('id', '=', int(draft_id)),
+                    ('id', '=', draft_id),
                     (
                         'requester_id',
                         '=',
@@ -936,27 +1142,35 @@ class SupportController(http.Controller):
                 return request.make_json_response(
                     {
                         'success': False,
-                    'message': 'المسودة غير موجودة.',
-                   },
+                        'message': 'المسودة غير موجودة.',
+                    },
                     status=404
-            )
+                )
 
             draft.write(values)
 
-         # إنشاء مسودة جديدة
+        # إنشاء مسودة جديدة
         else:
-            draft = request.env['support.ticket'].create(
-                   values
-           )
+            draft = request.env['support.ticket'].create(values)
+
         if (
             attachment_file
             and attachment_file.filename
             and file_content                    
         ):
+            request.env['ir.attachment'].sudo().search(
+                [
+                    ('res_model', '=', 'support.ticket'),
+                    ('res_id', '=', draft.id),
+                ]
+            ).unlink()
+
             request.env[
                 'ir.attachment'
             ].sudo().create({ 
-                'name': attachment_file.filename,
+                'name': self._attachment_filename(
+                    attachment_file
+                ),
                 'type': 'binary',
                 'datas': base64.b64encode(
                     file_content
@@ -980,7 +1194,6 @@ class SupportController(http.Controller):
         auth='user', 
         methods=['POST'],
         website=True,
-         csrf=False
     )
     def submit_support_draft(self, **kwargs):
         if not self._is_support_employee():
@@ -1007,11 +1220,22 @@ class SupportController(http.Controller):
                 },
                 status=400
             )
+
+        draft_id = self._positive_int(draft_id)
+
+        if not draft_id:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'رقم المسودة غير صحيح.',
+                },
+                status=400,
+            )
         draft = request.env[
             'support.ticket'            
-        ].sudo().search(
+        ].search(
             [
-                ('id', '=', int(draft_id)),
+                ('id', '=', draft_id),
                 (
                     'requester_id',                                    
                     '=',
@@ -1029,6 +1253,18 @@ class SupportController(http.Controller):
                 },
                 status=404
             )  
+
+        self._lock_ticket(draft)
+
+        if draft.status != 'draft':
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'تم إرسال هذه المسودة مسبقًا.',
+                },
+                status=409,
+            )
+
         if (  
              not draft.title           
             or not draft.description
@@ -1124,7 +1360,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
     def delete_support_draft(self, **kwargs):
         if not self._is_support_employee():
@@ -1149,11 +1384,22 @@ class SupportController(http.Controller):
                 },
                 status=400
             )  
+
+        draft_id = self._positive_int(draft_id)
+
+        if not draft_id:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'رقم المسودة غير صحيح.',
+                },
+                status=400,
+            )
         draft = request.env[
             'support.ticket'
         ].search(            
             [
-                ('id', '=', int(draft_id)),
+                ('id', '=', draft_id),
                 (                
                     'requester_id',
                      '=', 
@@ -1171,6 +1417,18 @@ class SupportController(http.Controller):
                  }, 
                 status=404
             )
+
+        self._lock_ticket(draft)
+
+        if draft.status != 'draft':
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'لا يمكن حذف مسودة تم إرسالها.',
+                },
+                status=409,
+            )
+
         draft.sudo().unlink()
 
         return request.make_json_response(
@@ -1282,16 +1540,16 @@ class SupportController(http.Controller):
 
         data = []
 
-        for ticket in tickets:
-            rating_record = request.env['support.rating'].search(
-                [('ticket_id', '=', ticket.id)],
-                limit=1
-            )
+        (
+            ratings_by_ticket,
+            histories_by_ticket,
+            attachments_by_ticket,
+        ) = self._ticket_related_data(tickets)
 
-            history_records = request.env['support.ticket.history'].search(
-                [('ticket_id', '=', ticket.id)],
-                order='create_date asc'
-            )
+        for ticket in tickets:
+            rating_record = ratings_by_ticket.get(ticket.id)
+            history_records = histories_by_ticket.get(ticket.id, [])
+            attachment_record = attachments_by_ticket.get(ticket.id)
 
             timeline = []
 
@@ -1307,14 +1565,6 @@ class SupportController(http.Controller):
                         else ''
                     )
                 })
-            attachment_record = request.env['ir.attachment'].sudo().search(
-               [
-                           ('res_model', '=', 'support.ticket'),
-                           ('res_id', '=', ticket.id),
-               ],
-               order='id desc',
-               limit=1
-           )
             data.append({
                 'id': (
                    ticket.ticket_number
@@ -1425,7 +1675,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
     def claim_support_ticket(self, **kwargs):
         if not request.env.user.has_group(
@@ -1480,6 +1729,9 @@ class SupportController(http.Controller):
                 status=404
             )
 
+        # يمنع مسؤولين من استلام التذكرة نفسها في اللحظة نفسها.
+        self._lock_ticket(ticket)
+
         if ticket.status != 'new' or ticket.assignee_id:
             return request.make_json_response(
                 {
@@ -1507,9 +1759,41 @@ class SupportController(http.Controller):
             'sla_response_status': sla_response_status,
         })
 
+        # إذا تم استلام الطلب بعد تجاوز SLA الاستجابة
+        if (
+            sla_response_status == 'failed'
+            and ticket.sla_response_alert_level < 100
+        ):
+            sent = ticket._send_sla_alert(
+                'response',
+                100
+            )
+
+            if sent:
+                ticket.write({
+                    'sla_response_alert_level': 100,
+                })
+
+
+        # إذا كان SLA الحل متجاوزًا قبل استلام الطلب
+        if (
+            ticket.sla_resolution_status == 'failed'
+            and ticket.sla_resolution_alert_level < 100
+        ):
+            sent = ticket._send_sla_alert(
+                'resolution',
+                100
+            )
+
+            if sent:
+                ticket.write({
+                    'sla_resolution_alert_level': 100,
+                })
+
+
         requester_partner = (
             ticket.requester_id.partner_id
-        )
+        )       
 
         message = ticket.message_post(
             subject='تم استلام طلبك',
@@ -1572,15 +1856,6 @@ class SupportController(http.Controller):
             note='تم استلام الطلب'
         )
 
-        self._add_ticket_history(
-        ticket=ticket,
-        action='processing',
-        old_status='processing',
-        new_status='processing',
-        note='قيد المعالجة'
-)
-        
-
         return request.make_json_response({
             'success': True,
             'ticket_number':
@@ -1633,17 +1908,17 @@ class SupportController(http.Controller):
 
         data = []
 
+        (
+            ratings_by_ticket,
+            histories_by_ticket,
+            attachments_by_ticket,
+        ) = self._ticket_related_data(tickets)
+
         for ticket in tickets:
 
-            rating_record = request.env['support.rating'].search(
-                [('ticket_id', '=', ticket.id)],
-                limit=1
-            )
-
-            history_records = request.env['support.ticket.history'].search(
-                [('ticket_id', '=', ticket.id)],
-                order='create_date asc'
-            )
+            rating_record = ratings_by_ticket.get(ticket.id)
+            history_records = histories_by_ticket.get(ticket.id, [])
+            attachment_record = attachments_by_ticket.get(ticket.id)
 
             timeline = []
 
@@ -1659,15 +1934,6 @@ class SupportController(http.Controller):
                         else ''
                     )
                 })
-
-            attachment_record = request.env['ir.attachment'].sudo().search(
-               [
-                           ('res_model', '=', 'support.ticket'),
-                           ('res_id', '=', ticket.id),
-               ],
-               order='id desc',
-               limit=1
-            ) 
 
             response_sla = ticket.get_sla_metrics(
                 'response'
@@ -1693,7 +1959,7 @@ class SupportController(http.Controller):
                 'department': (
                     ticket.department_id.name
                     if ticket.department_id
-                    else 'المالية'
+                    else ''
                 ),
                 'assignee': (
                     ticket.assignee_id.name
@@ -1776,9 +2042,14 @@ class SupportController(http.Controller):
 
                 'sla_resolution_remaining_hours': (
                      resolution_sla[
-                    'remaining_hours'
+                     'remaining_hours'
               ]
               ),
+              'sla_resolution_remaining_seconds': (
+                     resolution_sla[
+                    'remaining_seconds'
+               ]
+               ),
 
                 'first_response_at': (
                     fields.Datetime.context_timestamp(
@@ -1789,7 +2060,7 @@ class SupportController(http.Controller):
                     else ''
                 ),  
 
-                                'sla_pause_reason': (
+                    'sla_pause_reason': (
                     ticket.sla_pause_reason or ''
                 ),
 
@@ -1840,6 +2111,551 @@ class SupportController(http.Controller):
             'success': True,
             'tickets': data,
         })
+    @http.route(
+        '/support/analytics',
+        type='http',
+        auth='user',
+        methods=['GET'],
+        website=True,
+    )
+    def get_support_analytics(self, **kwargs):
+
+        if not self._is_support_manager():
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'غير مصرح لك.',
+                },
+                status=403
+            )
+
+        today = fields.Date.context_today(
+            request.env.user
+        )
+
+        period_start_date = (
+            today.replace(day=1)
+            - relativedelta(months=5)
+        )
+        period_start = fields.Datetime.to_datetime(
+            period_start_date
+        )
+
+        tickets = request.env[
+            'support.ticket'
+        ].search(
+            [
+                ('status', '!=', 'draft'),
+                ('submitted_at', '>=', period_start),
+            ],
+            order='submitted_at asc'
+        )
+
+        # -------------------------------------------------
+        # تجهيز آخر 6 أشهر
+        # -------------------------------------------------
+
+        months = []
+
+        for offset in range(5, -1, -1):
+
+            year = today.year
+            month = today.month - offset
+
+            while month <= 0:
+                month += 12
+                year -= 1
+
+            key = (
+                f'{year}-'
+                f'{str(month).zfill(2)}'
+            )
+
+            months.append({
+                'key': key,
+                'compliant': 0,
+                'breached': 0,
+                'response_hours': [],
+                'resolution_hours': [],
+            })
+
+        months_map = {
+            item['key']: item
+            for item in months
+        }
+
+        # -------------------------------------------------
+        # KPIs العامة
+        # -------------------------------------------------
+
+        total_sla = 0
+        compliant_sla = 0
+        breached_tickets = 0
+
+        response_hours = []
+        resolution_hours = []
+
+        compliant_tickets = 0
+        failed_tickets = 0
+
+        response_sla_total = 0
+        response_sla_compliant = 0
+        resolution_sla_total = 0
+        resolution_sla_compliant = 0
+
+        open_tickets = 0
+        resolved_tickets = 0
+        reopened_tickets = 0
+
+        # -------------------------------------------------
+        # تحليل الطلبات
+        # -------------------------------------------------
+
+        for ticket in tickets:
+
+            calendar = (
+                ticket.sla_calendar_id
+                or ticket.sla_policy_id.calendar_id
+                or ticket.company_id.resource_calendar_id
+                or request.env.company.resource_calendar_id
+            )
+
+            # الشهر الذي ينتمي إليه الطلب
+            submitted_local = (
+                fields.Datetime.context_timestamp(
+                    request.env.user,
+                    ticket.submitted_at
+                )
+                if ticket.submitted_at
+                else None
+            )
+
+            month_key = (
+                submitted_local.strftime('%Y-%m')
+                if submitted_local
+                else None
+            )
+
+            month_bucket = (
+                months_map.get(month_key)
+                if month_key
+                else None
+            )
+
+            # ---------------------------------------------
+            # حالة SLA للطلب
+            # ---------------------------------------------
+
+            ticket_breached = (
+                ticket.sla_response_status == 'failed'
+                or ticket.sla_resolution_status == 'failed'
+            )
+
+            response_finished = (
+                ticket.sla_response_status
+                in ['successful', 'failed']
+            )
+            resolution_finished = (
+                ticket.sla_resolution_status
+                in ['successful', 'failed']
+            )
+            ticket_evaluated = (
+                ticket_breached
+                or (
+                    response_finished
+                    and resolution_finished
+                )
+            )
+
+            if response_finished:
+                response_sla_total += 1
+                if ticket.sla_response_status == 'successful':
+                    response_sla_compliant += 1
+
+            if resolution_finished:
+                resolution_sla_total += 1
+                if ticket.sla_resolution_status == 'successful':
+                    resolution_sla_compliant += 1
+
+            if ticket.status != 'closed':
+                open_tickets += 1
+
+            if ticket.solution_at:
+                resolved_tickets += 1
+
+            if ticket.reopen_count:
+                reopened_tickets += 1
+
+            if ticket_evaluated:
+                total_sla += 1
+
+                if ticket_breached:
+                    breached_tickets += 1
+                    failed_tickets += 1
+
+                    if month_bucket:
+                        month_bucket['breached'] += 1
+                else:
+                    compliant_sla += 1
+                    compliant_tickets += 1
+
+                    if month_bucket:
+                        month_bucket['compliant'] += 1
+
+            # ---------------------------------------------
+            # زمن الاستجابة
+            # ---------------------------------------------
+
+            if (
+                calendar
+                and ticket.submitted_at
+                and ticket.first_response_at
+            ):
+
+                start = (
+                    fields.Datetime.to_datetime(
+                        ticket.submitted_at
+                    )
+                )
+
+                end = (
+                    fields.Datetime.to_datetime(
+                        ticket.first_response_at
+                    )
+                )
+
+                response_time = (
+                    calendar.get_work_hours_count(
+                        start,
+                        end,
+                        compute_leaves=True,
+                    )
+                )
+
+                response_time = max(
+                    response_time,
+                    0.0
+                )
+
+                response_hours.append(
+                    response_time
+                )
+
+                if month_bucket:
+                    month_bucket[
+                        'response_hours'
+                    ].append(
+                        response_time
+                    )
+
+            # ---------------------------------------------
+            # زمن الحل
+            # ---------------------------------------------
+
+            if (
+                calendar
+                and ticket.submitted_at
+                and ticket.solution_at
+            ):
+
+                start = (
+                    fields.Datetime.to_datetime(
+                        ticket.submitted_at
+                    )
+                )
+
+                end = (
+                    fields.Datetime.to_datetime(
+                        ticket.solution_at
+                    )
+                )
+
+                resolution_time = (
+                    calendar.get_work_hours_count(
+                        start,
+                        end,
+                        compute_leaves=True,
+                    )
+                )
+
+                resolution_time = max(
+                    resolution_time
+                    - (
+                        ticket.sla_paused_hours
+                        or 0.0
+                    ),
+                    0.0
+                )
+
+                resolution_hours.append(
+                    resolution_time
+                )
+
+                if month_bucket:
+                    month_bucket[
+                        'resolution_hours'
+                    ].append(
+                        resolution_time
+                    )
+
+        # -------------------------------------------------
+        # مؤشرات عامة
+        # -------------------------------------------------
+
+        sla_compliance = (
+            round(
+                (
+                    compliant_sla
+                    / total_sla
+                ) * 100,
+                1
+            )
+            if total_sla
+            else None
+        )
+
+        response_sla_compliance = (
+            round(
+                (
+                    response_sla_compliant
+                    / response_sla_total
+                ) * 100,
+                1,
+            )
+            if response_sla_total
+            else None
+        )
+
+        resolution_sla_compliance = (
+            round(
+                (
+                    resolution_sla_compliant
+                    / resolution_sla_total
+                ) * 100,
+                1,
+            )
+            if resolution_sla_total
+            else None
+        )
+
+        reopen_rate = (
+            round(
+                (reopened_tickets / resolved_tickets) * 100,
+                1,
+            )
+            if resolved_tickets
+            else None
+        )
+
+        ratings = request.env['support.rating'].search(
+            [('ticket_id', 'in', tickets.ids)]
+        )
+        rating_values = [
+            int(rating.rating)
+            for rating in ratings
+            if rating.rating
+        ]
+        average_rating = (
+            round(
+                sum(rating_values) / len(rating_values),
+                2,
+            )
+            if rating_values
+            else None
+        )
+
+        average_response = (
+            round(
+                sum(response_hours)
+                / len(response_hours),
+                2
+            )
+            if response_hours
+            else None
+        )
+
+        average_resolution = (
+            round(
+                sum(resolution_hours)
+                / len(resolution_hours),
+                2
+            )
+            if resolution_hours
+            else None
+        )
+
+        # -------------------------------------------------
+        # بيانات الرسومات
+        # -------------------------------------------------
+
+        trend_labels = []
+        trend_values = []
+
+        response_labels = []
+        response_values = []
+
+        resolution_labels = []
+        resolution_values = []
+
+        for month in months:
+
+            label = month['key']
+
+            completed = (
+                month['compliant']
+                + month['breached']
+            )
+
+            compliance_value = (
+                round(
+                    (
+                        month['compliant']
+                        / completed
+                    ) * 100,
+                    1
+                )
+                if completed
+                else 0.0
+            )
+
+            response_value = (
+                round(
+                    sum(
+                        month['response_hours']
+                    )
+                    / len(
+                        month['response_hours']
+                    ),
+                    2
+                )
+                if month[
+                    'response_hours'
+                ]
+                else 0.0
+            )
+
+            resolution_value = (
+                round(
+                    sum(
+                        month[
+                            'resolution_hours'
+                        ]
+                    )
+                    / len(
+                        month[
+                            'resolution_hours'
+                        ]
+                    ),
+                    2
+                )
+                if month[
+                    'resolution_hours'
+                ]
+                else 0.0
+            )
+
+            trend_labels.append(
+                label
+            )
+
+            trend_values.append(
+                compliance_value
+            )
+
+            response_labels.append(
+                label
+            )
+
+            response_values.append(
+                response_value
+            )
+
+            resolution_labels.append(
+                label
+            )
+
+            resolution_values.append(
+                resolution_value
+            )
+
+        # -------------------------------------------------
+        # Response
+        # -------------------------------------------------
+
+        return request.make_json_response(
+            {
+                'success': True,
+
+                'kpis': {
+                    'sla_compliance':
+                        sla_compliance,
+
+                    'response_sla_compliance':
+                        response_sla_compliance,
+
+                    'resolution_sla_compliance':
+                        resolution_sla_compliance,
+
+                    'average_response_hours':
+                        average_response,
+
+                    'average_resolution_hours':
+                        average_resolution,
+
+                    'breached_tickets':
+                        breached_tickets,
+
+                    'total_tickets': len(tickets),
+                    'evaluated_tickets': total_sla,
+                    'open_tickets': open_tickets,
+                    'reopen_rate': reopen_rate,
+                    'average_rating': average_rating,
+                    'rated_tickets': len(rating_values),
+                    'period_months': 6,
+                },
+
+                'charts': {
+
+                    'compliance': {
+                        'compliant':
+                            compliant_tickets,
+
+                        'breached':
+                            failed_tickets,
+                    },
+
+                    'trend': {
+                        'labels':
+                            trend_labels,
+
+                        'values':
+                            trend_values,
+                    },
+
+                    'response_time': {
+                        'labels':
+                            response_labels,
+
+                        'values':
+                            response_values,
+
+                        'average_hours':
+                            average_response,
+                    },
+
+                    'resolution_time': {
+                        'labels':
+                            resolution_labels,
+
+                        'values':
+                            resolution_values,
+
+                        'average_hours':
+                            average_resolution,
+                    },
+                },
+            }
+        )   
 
     @http.route(
        '/support/ticket/solution',
@@ -1847,7 +2663,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
     def submit_ticket_solution(self, **kwargs):
         if not request.env.user.has_group('website.group_support_manager'):
@@ -1873,6 +2688,15 @@ class SupportController(http.Controller):
                 status=400
             )
 
+        if len(solution) > 10000:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'نص الحل يتجاوز الحد المسموح.',
+                },
+                status=400,
+            )
+
         ticket = request.env['support.ticket'].search(
             [('ticket_number', '=', ticket_number)],
             limit=1
@@ -1886,6 +2710,8 @@ class SupportController(http.Controller):
                 },
                 status=404
             )
+
+        self._lock_ticket(ticket)
 
         if ticket.assignee_id != request.env.user:
             return request.make_json_response(
@@ -1974,7 +2800,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
     def employee_ticket_action(self, **kwargs):
         if not self._is_support_employee():
@@ -2036,6 +2861,8 @@ class SupportController(http.Controller):
                 },
                 status=404
             )
+
+        self._lock_ticket(ticket)
 
         if ticket.status != 'waiting_confirmation':
             return request.make_json_response(
@@ -2167,7 +2994,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
     def submit_ticket_rating(self, **kwargs):
         if not self._is_support_employee():
@@ -2183,6 +3009,15 @@ class SupportController(http.Controller):
         ticket_number = (data.get('ticket_number') or '').strip()
         rating_value = data.get('rating')
         comment = (data.get('comment') or '').strip()
+
+        if len(comment) > 2000:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'ملاحظة التقييم تتجاوز الحد المسموح.',
+                },
+                status=400,
+            )
 
         if not ticket_number:
             return request.make_json_response(
@@ -2253,12 +3088,22 @@ class SupportController(http.Controller):
                 status=400
             )
 
-        rating = request.env['support.rating'].create({
-            'ticket_id': ticket.id,
-            'rating': str(rating_value),
-            'comment': comment,
-            'rated_by': request.env.user.id,
-        })
+        try:
+            with request.env.cr.savepoint():
+                rating = request.env['support.rating'].create({
+                    'ticket_id': ticket.id,
+                    'rating': str(rating_value),
+                    'comment': comment,
+                    'rated_by': request.env.user.id,
+                })
+        except IntegrityError:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'تم تقييم هذا الطلب مسبقًا.',
+                },
+                status=409,
+            )
 
         self._add_ticket_history(
             ticket=ticket,
@@ -2316,7 +3161,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['GET'],
         website=True,
-        csrf=False
     )
     def get_ticket_messages(self, **kwargs):
 
@@ -2338,7 +3182,7 @@ class SupportController(http.Controller):
 
         ticket = request.env[
             'support.ticket'
-        ].sudo().search(
+        ].search(
             [
                 (
                     'ticket_number',
@@ -2480,7 +3324,6 @@ class SupportController(http.Controller):
         auth='user',
         methods=['POST'],
         website=True,
-        csrf=False
     )
     def send_ticket_message(self, **post):
 
@@ -2495,6 +3338,15 @@ class SupportController(http.Controller):
                 'message'
             ) or ''
         ).strip()
+
+        if len(body) > 5000:
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'نص الرسالة يتجاوز الحد المسموح.',
+                },
+                status=400,
+            )
 
         attachment_file = (
             request.httprequest.files.get(
@@ -2520,7 +3372,7 @@ class SupportController(http.Controller):
 
         ticket = request.env[
             'support.ticket'
-        ].sudo().search(
+        ].search(
             [
                 (
                     'ticket_number',
@@ -2564,6 +3416,15 @@ class SupportController(http.Controller):
                 status=403
             )
 
+        if ticket.status == 'closed':
+            return request.make_json_response(
+                {
+                    'success': False,
+                    'message': 'لا يمكن إرسال رسالة على طلب مغلق.',
+                },
+                status=400,
+            )
+
         if (
             is_support
             and ticket.assignee_id != request.env.user
@@ -2600,8 +3461,9 @@ class SupportController(http.Controller):
             attachment = request.env[
                 'ir.attachment'
             ].sudo().create({
-                'name':
-                    attachment_file.filename,
+                'name': self._attachment_filename(
+                    attachment_file
+                ),
 
                 'datas':
                     base64.b64encode(
@@ -2622,7 +3484,7 @@ class SupportController(http.Controller):
                 attachment.id
             )
 
-                   # إنشاء الرسالة سواء كانت نصًا أو مرفقًا
+      # إنشاء الرسالة سواء كانت نصًا أو مرفقًا
         message = request.env[
             'mail.message'
         ].sudo().create({
@@ -2632,7 +3494,9 @@ class SupportController(http.Controller):
             'subject': (
                 f'رسالة جديدة على الطلب {ticket.ticket_number}'
             ),
-            'body': body or 'تم إرسال مرفق في المحادثة.',
+            'body': html_escape(
+                body or 'تم إرسال مرفق في المحادثة.'
+            ),
             'message_type': 'comment',
             'attachment_ids': [
                 (6, 0, attachment_ids)
@@ -2661,18 +3525,18 @@ class SupportController(http.Controller):
                 'is_read': False,
             })
 
-        # إرسال حدث تحديث المحادثة
-        request.env[
-            'bus.bus'
-        ].sudo()._sendone(
-            f'support_ticket_{ticket.ticket_number}',
-            'support_chat_message',
-            {
-                'ticket_number': ticket.ticket_number,
-                'message_id': message.id,
-                'author_id': request.env.user.partner_id.id,
-            }
-        )
+            # قناة الشريك الخاصة تمنع الاشتراك في قناة تذكرة قابلة للتخمين.
+            request.env[
+                'bus.bus'
+            ].sudo()._sendone(
+                recipient_partner,
+                'support_chat_message',
+                {
+                    'ticket_number': ticket.ticket_number,
+                    'message_id': message.id,
+                    'author_id': request.env.user.partner_id.id,
+                }
+            )
 
         return request.make_json_response({
             'success': True,

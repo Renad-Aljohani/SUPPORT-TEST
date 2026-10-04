@@ -14,21 +14,5 @@
     </data>
 
 
-    <!-- تصنيفات الطلب -->
-    <data>
-
-        <record id="support_category_technical" model="support.category">
-            <field name="name">مشكلة تقنية</field>
-        </record>
-
-        <record id="support_category_service" model="support.category">
-            <field name="name">طلب خدمة</field>
-        </record>
-
-        <record id="support_category_consultation" model="support.category">
-            <field name="name">استفسار / استشارة</field>
-        </record>
-
-    </data>
 
 </odoo>

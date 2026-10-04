@@ -5,6 +5,74 @@ import { registry } from "@web/core/registry";
 const app =
   document.getElementById('app');
 
+let csrfToken =
+  app?.dataset.csrfToken ||
+  window.odoo?.csrf_token ||
+  '';
+
+async function getCsrfToken() {
+  if (csrfToken) {
+    return csrfToken;
+  }
+
+  const response = await fetch(
+    '/support/csrf',
+    {
+      credentials: 'same-origin',
+      headers: {
+        'Accept': 'application/json'
+      }
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || !result.csrf_token) {
+    throw new Error(
+      'تعذر تهيئة الحماية الأمنية للجلسة.'
+    );
+  }
+
+  csrfToken = result.csrf_token;
+  return csrfToken;
+}
+
+async function supportFetch(resource, options = {}) {
+  const config = {
+    credentials: 'same-origin',
+    ...options,
+  };
+
+  const method = String(
+    config.method || 'GET'
+  ).toUpperCase();
+
+  let url = String(resource);
+
+  if (![
+    'GET',
+    'HEAD',
+    'OPTIONS',
+    'TRACE',
+  ].includes(method)) {
+    const token = await getCsrfToken();
+
+    if (config.body instanceof FormData) {
+      config.body.set('csrf_token', token);
+    } else {
+      const separator = url.includes('?') ? '&' : '?';
+      url += `${separator}csrf_token=${encodeURIComponent(token)}`;
+    }
+  }
+
+  config.headers = {
+    'Accept': 'application/json',
+    ...(config.headers || {}),
+  };
+
+  return fetch(url, config);
+}
+
 const isEmployeePage =
   app?.dataset.userName !== undefined;
 
@@ -64,8 +132,6 @@ const paths = {
   file: '<path d="M13.6 4.2H7.4A1.4 1.4 0 0 0 6 5.6v12.8a1.4 1.4 0 0 0 1.4 1.4h9.2a1.4 1.4 0 0 0 1.4-1.4V8.6Z"/><path d="M13.6 4.2v4.4H18"/>'
 };
 
-let supportBus = null;
-
 const supportChatBusService = {
   dependencies: ['bus_service'],
 
@@ -74,8 +140,6 @@ const supportChatBusService = {
     if (!isEmployeePage) {
       return;
     }
-
-    supportBus = bus_service;
 
     bus_service.addEventListener(
       'notification',
@@ -124,6 +188,29 @@ registry.category(
   'employee_support_chat_bus_service',
   supportChatBusService
 );
+
+
+/* ترحيب شخصي أعلى الصفحة الرئيسية — عرض فقط، لا يغيّر أي بيانات */
+function greetingHTML(name, parts = []) {
+  const hour = new Date().getHours();
+  const hello = hour < 12 ? 'صباح الخير' : 'مساء الخير';
+  const first = String(name || '').trim().split(/\s+/)[0] || '';
+  const summary = parts.filter(Boolean);
+  const today = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+  return `
+    <p class="page-greeting">
+      <strong>${hello}${first ? '، ' + escapeHTML(first) : ''}</strong>
+      <span>${summary.length ? 'لديك ' + summary.join('، و') : 'لا توجد طلبات بانتظارك الآن'}</span>
+    </p>
+    <time class="page-date">${today}</time>
+  `;
+}
+
+function countLabel(n, one, many, cls) {
+  if (!n) return '';
+  return `<b class="${cls}">${n === 1 ? one : n + ' ' + many}</b>`;
+}
+
 
 function icon(name, label = '') {
   const aria =
@@ -336,6 +423,29 @@ function ticketStageIndex(status) {
   return indexes[status] ?? 0;
 }
 
+
+/* عنصر بيانات في رأس تفاصيل الطلب: مربع أيقونة + تسمية + قيمة */
+const META_ICONS = {
+  'النوع': 'file',
+  'الإدارة': 'dashboard',
+  'تاريخ الإنشاء': 'clock',
+  'مسؤول الدعم': 'headset',
+  'صاحب الطلب': 'user',
+  'الأولوية': 'chart'
+};
+
+function metaItem(label, valueHTML) {
+  const key = String(label).trim();
+  return `
+    <div class="detail-meta-item">
+      <div class="meta-text">
+        <small>${icon(META_ICONS[key] || 'file')}${label}</small>
+        <strong>${valueHTML}</strong>
+      </div>
+    </div>
+  `;
+}
+
 function renderTicketHero(ticket, facts = []) {
   return `
     <section class="detail-hero">
@@ -366,34 +476,17 @@ function renderTicketHero(ticket, facts = []) {
 
       <div class="detail-meta">
 
-        <div class="detail-meta-item">
-          <small>النوع</small>
-          <strong>${escapeHTML(ticket.type || '—')}</strong>
-        </div>
+        ${metaItem('النوع', escapeHTML(ticket.type || '—'))}
 
 
-        <div class="detail-meta-item">
-          <small>الإدارة</small>
-          <strong>${escapeHTML(ticket.department || '—')}</strong>
-        </div>
+        ${metaItem('الإدارة', escapeHTML(ticket.department || '—'))}
 
 
-        <div class="detail-meta-item">
-          <small>تاريخ الإنشاء</small>
-          <strong>
-            ${icon('clock')}
-            ${escapeHTML(formatDateTime(ticket.createdAt))}
-          </strong>
-        </div>
+        ${metaItem('تاريخ الإنشاء', escapeHTML(formatDateTime(ticket.createdAt)))}
 
 
         ${facts.map(
-    fact => `
-            <div class="detail-meta-item">
-              <small>${fact.label}</small>
-              <strong>${fact.value}</strong>
-            </div>
-          `
+    fact => metaItem(fact.label, fact.value)
   ).join('')}
 
       </div>
@@ -472,6 +565,14 @@ function renderTicketProgress(ticket) {
    Stats
     */
 
+/* توضيح طريقة حساب كل بطاقة — يظهر عند التمرير أو التركيز (عرض فقط) */
+const STAT_HINTS = {
+  'جميع الطلبات': 'كل الطلبات التي قدّمتها بجميع حالاتها.',
+  'الطلبات الجديدة': 'طلباتك بحالة «جديد» التي لم يستلمها فريق الدعم بعد.',
+  'قيد المعالجة': 'طلباتك التي يعمل عليها فريق الدعم الآن.',
+  'الطلبات المغلقة': 'طلباتك التي حُلّت وأُغلقت.'
+};
+
 function statCard(
   iconName,
   number,
@@ -479,6 +580,8 @@ function statCard(
   featured = false,
   tone = 'total'
 ) {
+  const hint = STAT_HINTS[String(label).trim()] || '';
+
   return `
     <article
       class="stat-card ${featured
@@ -486,6 +589,7 @@ function statCard(
       : ''
     }"
       data-tone="${escapeHTML(tone)}"
+      ${hint ? 'tabindex="0"' : ''}
     >
 
       <span class="stat-icon">
@@ -503,6 +607,8 @@ function statCard(
         </span>
 
       </div>
+
+      ${hint ? `<span class="stat-hint" role="tooltip">${escapeHTML(hint)}</span>` : ''}
 
     </article>
   `;
@@ -731,7 +837,7 @@ function scrollChatToBottom() {
 
 async function loadTicketMessages(ticket) {
   try {
-    const response = await fetch(
+    const response = await supportFetch(
       `/support/ticket/messages?ticket_number=${encodeURIComponent(ticket.id)}`
     );
 
@@ -855,7 +961,7 @@ function bindChat({
 
       try {
         const response =
-          await fetch(
+          await supportFetch(
             '/support/ticket/message/send',
             {
               method: 'POST',
@@ -1072,10 +1178,8 @@ function mountShell({
   topbar.innerHTML = `
     <div class="topbar-inner">
 
-      <a
+      <div
         class="brand"
-        href="#${items[0].key}"
-        data-route="${items[0].key}"
         aria-label="${escapeHTML(PORTAL_NAME)} — ${escapeHTML(BRAND_NAME)}"
       >
 
@@ -1102,7 +1206,7 @@ function mountShell({
 
         </span>
 
-      </a>
+      </div>
 
       <nav
         class="main-nav"
@@ -1200,7 +1304,7 @@ function mountShell({
 }
 async function loadEmployeeNotifications() {
   try {
-    const response = await fetch(
+    const response = await supportFetch(
       '/support/notifications'
     );
 
@@ -1266,7 +1370,7 @@ async function markNotificationRead(
   notificationId = null
 ) {
   try {
-    const response = await fetch(
+    const response = await supportFetch(
       '/support/notifications/read',
       {
         method: 'POST',
@@ -1556,10 +1660,20 @@ function bindNotifications(
           if (currentPanel) {
             currentPanel.hidden =
               true;
+            document.querySelector('.nav-actions [aria-label="الإشعارات"]')?.setAttribute('aria-expanded', 'false');
           }
         }
       }
     );
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      const currentPanel = document.getElementById('notifications-panel');
+      if (!currentPanel || currentPanel.hidden) return;
+      currentPanel.hidden = true;
+      const bell = document.querySelector('.nav-actions [aria-label="الإشعارات"]');
+      bell?.setAttribute('aria-expanded', 'false');
+      bell?.focus();
+    });
   }
 }
 
@@ -1707,7 +1821,7 @@ async function render() {
 async function renderRequests() {
   try {
     const response =
-      await fetch(
+      await supportFetch(
         '/support/tickets'
       );
 
@@ -1765,6 +1879,7 @@ async function renderRequests() {
   class="
     page-head
     requests-page-head
+    page-head-welcome
   "
 >
   <div>
@@ -1772,9 +1887,10 @@ async function renderRequests() {
       الرئيسية
     </h1>
 
-    <p>
-      نظرة شاملة على طلبات الدعم المقدمة
-    </p>
+    ${greetingHTML(app?.dataset.userName, [
+      countLabel(tickets.filter(t => t.status === 'بانتظار تأكيد الموظف').length, 'طلب واحد', 'طلبات', 'is-risk') && countLabel(tickets.filter(t => t.status === 'بانتظار تأكيد الموظف').length, 'طلب واحد', 'طلبات', 'is-risk') + ' بانتظار تأكيدك',
+      countLabel(tickets.filter(t => t.status === 'قيد المعالجة').length, 'طلب واحد', 'طلبات', 'is-new') && countLabel(tickets.filter(t => t.status === 'قيد المعالجة').length, 'طلب واحد', 'طلبات', 'is-new') + ' قيد المعالجة'
+    ])}
   </div>
 </header>
       <section
@@ -2188,7 +2304,7 @@ function drawLatestEmployeeRows(
 async function renderAllRequests() {
   try {
     const response =
-      await fetch(
+      await supportFetch(
         '/support/tickets'
       );
 
@@ -2227,15 +2343,6 @@ async function renderAllRequests() {
       tickets;
 
     app.innerHTML = `
-
-      <a
-        class="page-back all-requests-back"
-        href="#requests"
-        id="back-to-home"
-      >
-        ${icon('arrow')}
-العودة إلى الرئيسية
-        </a>
 
       <header
         class="
@@ -3340,7 +3447,7 @@ async function renderNewRequest() {
     Number.isInteger(draftId)
   ) {
     try {
-      const response = await fetch(
+      const response = await supportFetch(
         `/support/draft/${draftId}`
       );
 
@@ -3620,6 +3727,10 @@ async function renderNewRequest() {
           </button>
 
         </div>
+
+        <p class="support-hours-note">
+          <span>يتم تقديم خدمات الدعم الفني خلال أوقات العمل الرسمية، من الأحد إلى الخميس، من الساعة 8:00 صباحًا حتى 4:00 مساءً.</span>
+        </p>
 
       </div>
 
@@ -4023,7 +4134,7 @@ async function saveDraft() {
   }
 
   try {
-    const response = await fetch(
+    const response = await supportFetch(
       '/support/draft/save',
       {
         method: 'POST',
@@ -4075,7 +4186,7 @@ async function saveDraft() {
 
 async function sendDraft(draftId) {
   try {
-    const response = await fetch(
+    const response = await supportFetch(
       '/support/draft/submit',
       {
         method: 'POST',
@@ -4107,7 +4218,7 @@ async function sendDraft(draftId) {
     }
 
     showToast(
-      `تم إنشاء طلبك بنجاح - ${result.ticket_number}`,
+      `تم إنشاء طلبك بنجاح${result.ticket_number ? ' - ' + result.ticket_number : ''}`,
       'success'
     );
 
@@ -4131,7 +4242,7 @@ async function sendDraft(draftId) {
     */
 async function deleteDraft(draftId) {
   try {
-    const response = await fetch(
+    const response = await supportFetch(
       '/support/draft/delete',
       {
         method: 'POST',
@@ -4248,7 +4359,7 @@ async function submitRequest(event) {
       }
 
       const saveResponse =
-        await fetch(
+        await supportFetch(
           '/support/draft/save',
           {
             method: 'POST',
@@ -4276,7 +4387,7 @@ async function submitRequest(event) {
       }
 
       const submitResponse =
-        await fetch(
+        await supportFetch(
           '/support/draft/submit',
           {
             method: 'POST',
@@ -4312,7 +4423,7 @@ async function submitRequest(event) {
       }
 
       showToast(
-        `تم إنشاء طلبك بنجاح - ${submitResult.ticket_number}`,
+        `تم إنشاء طلبك بنجاح${submitResult.ticket_number ? ' - ' + submitResult.ticket_number : ''}`,
         'success'
       );;
 
@@ -4359,7 +4470,7 @@ async function submitRequest(event) {
     }
 
     const response =
-      await fetch(
+      await supportFetch(
         '/support/ticket/create',
         {
           method: 'POST',
@@ -4387,7 +4498,7 @@ async function submitRequest(event) {
     }
 
     showToast(
-      `تم إنشاء طلبك بنجاح - ${result.ticket_number}`,
+      `تم إنشاء طلبك بنجاح${result.ticket_number ? ' - ' + result.ticket_number : ''}`,
       'success'
     );
     setTimeout(() => {
@@ -4423,7 +4534,7 @@ async function renderDetail(id) {
   if (!ticket) {
     try {
       const response =
-        await fetch(
+        await supportFetch(
           '/support/tickets'
         );
 
@@ -4484,27 +4595,10 @@ async function renderDetail(id) {
   );
 
 
-  if (supportBus) {
-    supportBus.addChannel(
-      `support_ticket_${ticket.id}`
-    );
-  }
-
   const employeeAction =
     renderEmployeeAction(ticket);
 
   app.innerHTML = `
-    <a
-      class="page-back"
-      href="#${detailReturnRoute}"
-      id="back-to-requests"
-    >
-
-      ${icon('arrow')}
-
-      العودة إلى الطلبات
-
-    </a>
 
 
     <div class="record-card">
@@ -4615,23 +4709,6 @@ async function renderDetail(id) {
   `;
 
 
-  document
-    .getElementById(
-      'back-to-requests'
-    )
-    .addEventListener(
-      'click',
-      event => {
-
-        event.preventDefault();
-
-
-        navigate(
-          detailReturnRoute
-        );
-      }
-    );
-
 
   bindDetailActions(
     ticket
@@ -4698,7 +4775,9 @@ function renderEmployeeAction(
 
   if (
     ticket.status ===
-    'مغلق'
+    'مغلق' ||
+    ticket.status ===
+    'بانتظار التقييم'
   ) {
 
     return ticket.rating
@@ -4738,32 +4817,45 @@ function renderEmployeeAction(
 
 
       : `
+        <div
+          class="rating-wizard"
+          id="rating-wizard"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rating-title"
+          aria-describedby="rating-desc"
+        >
         <section
-          class="rating-panel"
+          class="rating-panel rating-wizard-card"
           id="rating-panel"
+          data-step="1"
         >
 
-          <h3>
+          <div class="rating-wizard-head">
+            <span class="rating-wizard-step">
+              الخطوة <b data-rating-step-num>1</b> من 2
+            </span>
+            <div class="rating-wizard-progress" aria-hidden="true">
+              <span class="is-done"></span>
+              <span></span>
+            </div>
+          </div>
+
+          <h3 id="rating-title">
             قيّم خدمة الدعم الفني
           </h3>
 
-          <p>
+          <p id="rating-desc">
             رأيك يساعد فريق الدعم على تحسين الخدمة
           </p>
 
+          <div class="rating-wizard-pane" data-rating-step="1">
 
-          <div
-            class="stars"
-            aria-label="تقييم من خمس نجوم"
-          >
-
-            ${[
-        5,
-        4,
-        3,
-        2,
-        1
-      ]
+            <div
+              class="stars"
+              aria-label="تقييم من خمس نجوم"
+            >
+              ${[5, 4, 3, 2, 1]
         .map(
           value => `
                   <button
@@ -4777,42 +4869,66 @@ function renderEmployeeAction(
                 `
         )
         .join('')}
+            </div>
+
+            <p class="rating-wizard-note">
+              التقييم مطلوب لإكمال إغلاق الطلب
+            </p>
+
+            <div class="rating-wizard-actions">
+              <button
+                class="button"
+                id="rating-next"
+                type="button"
+                disabled
+              >
+                التالي
+              </button>
+            </div>
 
           </div>
 
+          <div class="rating-wizard-pane" data-rating-step="2" hidden>
 
-          <label
-            for="rating-comment"
-          >
+            <label
+              for="rating-comment"
+            >
+              <b>
+                ملاحظة التقييم
+              </b>
+              <span class="optional-label">
+                (اختياري)
+              </span>
+            </label>
 
-            <b>
-              ملاحظة التقييم
-            </b>
+            <textarea
+              class="field-control"
+              id="rating-comment"
+              placeholder="اكتب ملاحظتك عن الخدمة"
+            ></textarea>
 
-            <span class="optional-label">
-              (اختياري)
-            </span>
+            <div class="rating-wizard-actions">
+              <button
+                class="button gold"
+                id="submit-rating"
+                type="button"
+                disabled
+              >
+                إرسال التقييم
+              </button>
+              <button
+                class="button secondary"
+                id="rating-prev"
+                type="button"
+              >
+                رجوع
+              </button>
+            </div>
 
-          </label>
-
-
-          <textarea
-            class="field-control"
-            id="rating-comment"
-            placeholder="اكتب ملاحظتك عن الخدمة"
-          ></textarea>
-
-
-          <button
-            class="button gold"
-            id="submit-rating"
-            type="button"
-            disabled
-          >
-            إرسال التقييم
-          </button>
+          </div>
 
         </section>
+        </div>
       `;
   }
 
@@ -4890,7 +5006,78 @@ function bindDetailActions(
         submit.disabled =
           !rating;
       }
+
+      if (ratingNext) {
+        ratingNext.disabled =
+          !rating;
+      }
     };
+
+  /* معالج التقييم الإجباري: نافذة بخطوتين تظهر تلقائيًا بعد إغلاق الطلب،
+     بلا زر إغلاق ولا Esc، والتركيز محصور داخلها حتى يُرسل التقييم */
+  const ratingWizard =
+    document.getElementById('rating-wizard');
+
+  const ratingNext =
+    document.getElementById('rating-next');
+
+  const goRatingStep = step => {
+    if (!ratingWizard) return;
+    ratingWizard
+      .querySelectorAll('[data-rating-step]')
+      .forEach(pane => {
+        pane.hidden = Number(pane.dataset.ratingStep) !== step;
+      });
+    const card = ratingWizard.querySelector('.rating-wizard-card');
+    if (card) card.dataset.step = String(step);
+    const num = ratingWizard.querySelector('[data-rating-step-num]');
+    if (num) num.textContent = String(step);
+    ratingWizard
+      .querySelectorAll('.rating-wizard-progress span')
+      .forEach((bar, index) => bar.classList.toggle('is-done', index < step));
+    const target = step === 1
+      ? ratingWizard.querySelector('.star-button.selected') || ratingWizard.querySelector('.star-button')
+      : comment;
+    target?.focus({ preventScroll: true });
+  };
+
+  if (ratingWizard) {
+    if (app && ratingWizard.parentElement !== app) {
+      app.appendChild(ratingWizard);
+    }
+
+    ratingWizard.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = [
+        ...ratingWizard.querySelectorAll('button:not([disabled]), textarea')
+      ].filter(el => el.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+
+    ratingNext?.addEventListener('click', () => {
+      if (rating) goRatingStep(2);
+    });
+
+    document
+      .getElementById('rating-prev')
+      ?.addEventListener('click', () => goRatingStep(1));
+
+    requestAnimationFrame(() => goRatingStep(1));
+  }
 
 
   stars.forEach(
@@ -4934,10 +5121,11 @@ function bindDetailActions(
           return;
         }
 
+        submit.disabled = true;
 
         try {
           const response =
-            await fetch(
+            await supportFetch(
               '/support/ticket/rating',
               {
                 method:
@@ -4993,8 +5181,10 @@ function bindDetailActions(
             'success'
           );
 
+          ratingWizard?.remove();
+
           const responseTickets =
-            await fetch(
+            await supportFetch(
               '/support/tickets'
             );
 
@@ -5031,6 +5221,10 @@ function bindDetailActions(
           showToast(
             'حدث خطأ أثناء إرسال التقييم'
           );
+        } finally {
+          if (submit.isConnected) {
+            submit.disabled = !rating;
+          }
         }
       }
     );
@@ -5048,7 +5242,7 @@ async function submitEmployeeAction(
   try {
 
     const response =
-      await fetch(
+      await supportFetch(
         '/support/ticket/employee-action',
         {
           method:
@@ -5098,7 +5292,7 @@ async function submitEmployeeAction(
     );
 
     const responseTickets =
-      await fetch(
+      await supportFetch(
         '/support/tickets'
       );
 
@@ -5166,3 +5360,248 @@ if (isEmployeePage) {
 
   render();
 }
+
+/* =========================================================
+   M. طبقة الحركة (Motion) — مُلحقة في نهاية الملف دون تعديل ما قبلها
+   ========================================================= */
+/*
+ * منصة الدعم الفني — طبقة الحركة (motion.js)
+ * JavaScript خام بلا أي مكتبة أو اعتماد (لا jQuery ولا OWL ولا registry)،
+ * ويعمل فقط إن وُجد #app.page-shell، فلا يؤثر على الواجهة الخلفية أو بقية الموقع.
+ * سكربت مستقل: لا يستدعي أي API، ولا يغيّر state، ولا يلمس أي معرّف أو صنف
+ * يعتمد عليه support.js / employee.js. يراقب #app فقط، ويضيف أصنافًا بصرية
+ * (m-enter, m-chart, m-drawn) ومتغيرات CSS (--i, --mx, --my, --len).
+ *
+ * لا يعيد تشغيل الحركة إن أُعيد رسم الصفحة بنفس البيانات (مثل الكتابة في
+ * البحث أو التحديث الدوري) — الحركة تعمل فقط عند تغيّر المحتوى فعلًا.
+ */
+(function () {
+  'use strict';
+  // support.js و employee.js كلاهما في web.assets_frontend، فالحارس يمنع التشغيل مرتين
+  if (window.__iuMotion) return;
+  window.__iuMotion = true;
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  const seen = new Map(); // signature -> true
+  const lastNumbers = new Map(); // stat label -> number
+
+  const ENTER = [
+    '.page-head',
+    '.stats-grid > .stat-card',
+    '.performance-grid > .stat-card',
+    '.platform-charts-grid > .analytics-card',
+    '.detail-hero',
+    '.ticket-progress',
+    '.summary-strip',
+    '.surface',
+    '.entry-option'
+  ];
+
+  const sig = el => (el.className + '|' + el.textContent.replace(/\s+/g, ' ').trim()).slice(0, 400);
+
+  function isNew(el) {
+    const key = sig(el);
+    if (seen.has(key)) return false;
+    seen.set(key, true);
+    if (seen.size > 600) seen.delete(seen.keys().next().value);
+    return true;
+  }
+
+  /* ---------- دخول متتابع ---------- */
+  function enter(root) {
+    const groups = new Map();
+    root.querySelectorAll(ENTER.join(',')).forEach(el => {
+      if (el.dataset.mDone) return;
+      el.dataset.mDone = '1';
+      if (!isNew(el)) return;
+      const parent = el.parentElement;
+      const i = groups.get(parent) || 0;
+      groups.set(parent, i + 1);
+      el.style.setProperty('--i', Math.min(i, 8));
+      el.classList.add('m-enter');
+      el.addEventListener('animationend', () => el.classList.remove('m-enter'), { once: true });
+    });
+
+    root.querySelectorAll('.data-table tbody').forEach(tb => {
+      if (tb.dataset.mDone) return;
+      tb.dataset.mDone = '1';
+      if (!isNew(tb)) return;
+      [...tb.rows].slice(0, 12).forEach((tr, i) => {
+        tr.style.setProperty('--i', i);
+        tr.classList.add('m-enter');
+        tr.addEventListener('animationend', () => tr.classList.remove('m-enter'), { once: true });
+      });
+    });
+  }
+
+  /* ---------- عدّاد الأرقام ---------- */
+  const NUM = /(\d+(?:[.,]\d+)?)/;
+
+  function countUp(root) {
+    root.querySelectorAll('.stat-card strong, .sla-donut-center strong').forEach(el => {
+      if (el.dataset.mCount) return;
+      el.dataset.mCount = '1';
+
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode()) && !NUM.test(node.nodeValue)) {}
+      if (!node) return;
+
+      const text = node.nodeValue;
+      const m = text.match(NUM);
+      const raw = m[1];
+      const target = parseFloat(raw.replace(',', '.'));
+      if (!isFinite(target) || target === 0) return;
+
+      const card = el.closest('.stat-card, .analytics-card');
+      const label = card ? card.textContent.replace(/[\d.,%\s]+/g, ' ').trim() : '';
+      const prev = lastNumbers.has(label) ? lastNumbers.get(label) : 0;
+      lastNumbers.set(label, target);
+      if (prev === target || reduce.matches) return;
+
+      const decimals = (raw.split(/[.,]/)[1] || '').length;
+      const sep = raw.includes(',') ? ',' : '.';
+      const before = text.slice(0, m.index);
+      const after = text.slice(m.index + raw.length);
+      const dur = 900;
+      const t0 = performance.now();
+
+      const fmt = v => v.toFixed(decimals).replace('.', sep);
+      const tick = now => {
+        const p = Math.min(1, (now - t0) / dur);
+        const e = 1 - Math.pow(1 - p, 3);
+        node.nodeValue = before + fmt(prev + (target - prev) * e) + after;
+        if (p < 1) requestAnimationFrame(tick);
+        else node.nodeValue = text;
+      };
+      node.nodeValue = before + fmt(prev) + after;
+      requestAnimationFrame(tick);
+    });
+  }
+
+  /* ---------- الرسوم البيانية ---------- */
+  function charts(root) {
+    root.querySelectorAll('.analytics-card').forEach(card => {
+      if (card.dataset.mChart) return;
+      card.dataset.mChart = '1';
+      if (!isNew(card) || reduce.matches) return;
+
+      card.querySelectorAll('.analytics-column-item').forEach((item, i) => {
+        item.style.setProperty('--i', i);
+        item.querySelectorAll('.analytics-column-bar, .analytics-column-value')
+          .forEach(n => n.style.setProperty('--i', i));
+      });
+      card.querySelectorAll('.sla-bar-fill').forEach((n, i) => n.style.setProperty('--i', i));
+      card.querySelectorAll('.sla-line-point').forEach((n, i) => n.style.setProperty('--i', i));
+
+      const path = card.querySelector('.sla-line-path');
+      if (path && path.getTotalLength) {
+        try {
+          const len = Math.ceil(path.getTotalLength()) + 2;
+          path.style.setProperty('--len', len);
+        } catch (e) { /* لا شيء */ }
+      }
+
+      card.classList.add('m-chart');
+      // الرسم يبدأ حين تظهر البطاقة في الشاشة
+      io.observe(card);
+    });
+
+    // ربط نقاط الخط بتسمياتها عند تمرير المؤشر
+    root.querySelectorAll('.sla-line-chart').forEach(chart => {
+      if (chart.dataset.mLink) return;
+      chart.dataset.mLink = '1';
+      const pts = chart.querySelectorAll('.sla-line-point');
+      const lbl = chart.querySelectorAll('.sla-line-labels span');
+      const set = (i, on) => {
+        pts[i] && pts[i].classList.toggle('is-hot', on);
+        lbl[i] && lbl[i].classList.toggle('is-hot', on);
+      };
+      lbl.forEach((l, i) => {
+        l.addEventListener('pointerenter', () => set(i, true));
+        l.addEventListener('pointerleave', () => set(i, false));
+      });
+      pts.forEach((p, i) => {
+        p.addEventListener('pointerenter', () => set(i, true));
+        p.addEventListener('pointerleave', () => set(i, false));
+      });
+    });
+  }
+
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(en => {
+      if (!en.isIntersecting) return;
+      const card = en.target;
+      io.unobserve(card);
+      // الأعمدة والدونات تعمل بـ CSS مباشرة؛ الخط يحتاج إطارًا واحدًا
+      requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add('m-drawn')));
+      setTimeout(() => card.classList.remove('m-chart'), 2200);
+    });
+  }, { threshold: .25 });
+
+  /* ---------- الضوء التابع للمؤشر ---------- */
+  const SPOT = '.stat-card, .analytics-card, .entry-option';
+  let raf = 0;
+  document.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse' || raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const el = e.target.closest && e.target.closest(SPOT);
+      if (!el || !el.closest('#app, .portal-entry')) return;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      el.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    });
+  }, { passive: true });
+
+  /* ---------- جرس الإشعارات ---------- */
+  let lastCount = null;
+  function bell() {
+    const badge = document.querySelector('#topbar .notification-count');
+    const n = badge ? parseInt(badge.textContent, 10) || 0 : 0;
+    if (lastCount !== null && n > lastCount && !reduce.matches) {
+      const btn = badge.closest('.icon-button');
+      if (btn) {
+        btn.classList.remove('m-ring');
+        void btn.offsetWidth;
+        btn.classList.add('m-ring');
+        setTimeout(() => btn.classList.remove('m-ring'), 800);
+      }
+    }
+    lastCount = n;
+  }
+
+  /* ---------- المراقبة ---------- */
+  function run() {
+    const app = document.getElementById('app');
+    const entry = document.querySelector('.portal-entry');
+    [app, entry].forEach(root => {
+      if (!root) return;
+      enter(root);
+      countUp(root);
+      charts(root);
+    });
+    bell();
+  }
+
+  let pending = 0;
+  const schedule = () => {
+    if (pending) return;
+    pending = requestAnimationFrame(() => { pending = 0; run(); });
+  };
+
+  function start() {
+    // يعمل في صفحات المنصة وحدها؛ أي صفحة أخرى في Odoo لا يلمسها إطلاقًا
+    if (!document.querySelector('#app.page-shell, .portal-entry')) return;
+    document.documentElement.classList.add('iu-motion');
+    run();
+    ['app', 'topbar'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) new MutationObserver(schedule).observe(el, { childList: true, subtree: true });
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();

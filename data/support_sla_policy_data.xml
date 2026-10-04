@@ -4,7 +4,7 @@
 
     <record id="sla_inquiry_medium" model="support.sla.policy">
         <field name="name">استفسار - متوسطة</field>
-        <field name="category_id" ref="support_category_inquiry"/>
+        <field name="category_id" ref="support_category_consultation"/>
         <field name="priority">medium</field>
         <field name="response_hours">1</field>
         <field name="resolution_hours">4</field>
@@ -12,7 +12,7 @@
 
     <record id="sla_inquiry_low" model="support.sla.policy">
         <field name="name">استفسار - منخفضة</field>
-        <field name="category_id" ref="support_category_inquiry"/>
+        <field name="category_id" ref="support_category_consultation"/>
         <field name="priority">low</field>
         <field name="response_hours">2</field>
         <field name="resolution_hours">8</field>
