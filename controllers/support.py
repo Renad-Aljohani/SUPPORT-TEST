@@ -1,4 +1,6 @@
 import base64
+import functools
+import logging
 from collections import defaultdict
 from pathlib import Path
 
@@ -9,7 +11,8 @@ from odoo import http, fields
 from odoo.http import content_disposition, request
 from odoo.tools import html2plaintext, html_escape
 from odoo.tools.mimetypes import guess_mimetype
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, MissingError, UserError, ValidationError
+from werkzeug.exceptions import HTTPException
 
 
 GROUP_SUPPORT_EMPLOYEE = 'website.group_support_employee'
@@ -30,6 +33,45 @@ ALLOWED_ATTACHMENT_TYPES = {
     'video/mp4': {'.mp4'},
     'video/quicktime': {'.mov'},
 }
+
+
+_logger = logging.getLogger(__name__)
+
+
+def _json_errors(endpoint):
+    """Keep the JSON contract {success, message} for every failure (API doc §5).
+
+    Business-rule errors raised by the ORM (ValidationError/UserError/
+    AccessError) used to escape as an HTML error page. The transaction is
+    rolled back first so no partial record survives a failed request.
+    """
+    @functools.wraps(endpoint)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return endpoint(self, *args, **kwargs)
+        except HTTPException:
+            raise
+        except (AccessError, MissingError) as error:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'success': False, 'message': str(error.args[0] if error.args else error)},
+                status=403 if isinstance(error, AccessError) else 404,
+            )
+        except UserError as error:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'success': False, 'message': str(error.args[0] if error.args else error)},
+                status=400,
+            )
+        except Exception:
+            request.env.cr.rollback()
+            _logger.exception('Support platform request failed: %s', request.httprequest.path)
+            return request.make_json_response(
+                {'success': False, 'message': 'حدث خطأ غير متوقع، يرجى المحاولة لاحقًا.'},
+                status=500,
+            )
+
+    return wrapper
 
 
 class SupportController(http.Controller):
@@ -231,6 +273,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=False,
     )
+    @_json_errors
     def support_csrf(self, **kwargs):
         if not self._is_support_user():
             return request.not_found()
@@ -325,6 +368,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def hold_support_ticket(self, **kwargs):
         if not request.env.user.has_group(
             'website.group_support_manager'
@@ -446,6 +490,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def resume_support_ticket(self, **kwargs):
         if not request.env.user.has_group(
             'website.group_support_manager'
@@ -540,6 +585,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True,
     )
+    @_json_errors
     def get_support_notifications(self, **kwargs):
         partner = request.env.user.partner_id
 
@@ -622,6 +668,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def mark_support_notifications_read(self, **kwargs):
         data = request.httprequest.get_json(
             silent=True
@@ -682,6 +729,7 @@ class SupportController(http.Controller):
         website=True,
     )
 
+    @_json_errors
     def create_support_ticket(self, **kwargs):
         if not self._is_support_employee():
              return request.make_json_response(
@@ -1004,6 +1052,7 @@ class SupportController(http.Controller):
     methods=['POST'],
     website=True,
    )
+    @_json_errors
     def save_support_draft(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1195,6 +1244,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def submit_support_draft(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1361,6 +1411,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def delete_support_draft(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1444,6 +1495,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True
     )
+    @_json_errors
     def get_support_draft(self, draft_id, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1507,6 +1559,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True
     )
+    @_json_errors
     def get_employee_tickets(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1676,6 +1729,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def claim_support_ticket(self, **kwargs):
         if not request.env.user.has_group(
             'website.group_support_manager'
@@ -1873,6 +1927,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True
     )
+    @_json_errors
     def get_manager_tickets(self, **kwargs):       
         if not request.env.user.has_group('website.group_support_manager'):
             return request.make_json_response(
@@ -2118,6 +2173,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True,
     )
+    @_json_errors
     def get_support_analytics(self, **kwargs):
 
         if not self._is_support_manager():
@@ -2664,6 +2720,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def submit_ticket_solution(self, **kwargs):
         if not request.env.user.has_group('website.group_support_manager'):
             return request.make_json_response(
@@ -2801,6 +2858,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def employee_ticket_action(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -2995,6 +3053,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def submit_ticket_rating(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -3162,6 +3221,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True,
     )
+    @_json_errors
     def get_ticket_messages(self, **kwargs):
 
         ticket_number = (
@@ -3325,6 +3385,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def send_ticket_message(self, **post):
 
         ticket_number = (

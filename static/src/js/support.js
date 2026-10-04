@@ -10,6 +10,23 @@ let csrfToken =
   window.odoo?.csrf_token ||
   '';
 
+/* انتهاء الجلسة: مسارات auth='user' تُعيد التوجيه إلى /web/login، فيتبع fetch
+   التحويل ويستلم صفحة HTML بدل JSON. نعيد المستخدم لتسجيل الدخول بدل خطأ تحليل. */
+function redirectIfSessionExpired(response) {
+  let path = '';
+  try {
+    path = new URL(response.url, window.location.origin).pathname;
+  } catch (error) {
+    path = '';
+  }
+  if (response.redirected && path.startsWith('/web/login')) {
+    const back = window.location.pathname + window.location.search;
+    window.location.assign(`/web/login?redirect=${encodeURIComponent(back)}`);
+    throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى.');
+  }
+  return response;
+}
+
 async function getCsrfToken() {
   if (csrfToken) {
     return csrfToken;
@@ -25,6 +42,7 @@ async function getCsrfToken() {
     }
   );
 
+  redirectIfSessionExpired(response);
   const result = await response.json();
 
   if (!response.ok || !result.csrf_token) {
@@ -71,7 +89,7 @@ config.headers = {
   ...(config.headers || {}),
 };
 
-const response = await fetch(url, config);
+const response = redirectIfSessionExpired(await fetch(url, config));
 
 if (!response.ok) {
   const text = await response.clone().text();
