@@ -132,7 +132,6 @@
 body.iu-portal {
   margin: 0;
   min-width: 320px;
-  background: var(--bg);
   color: var(--ink);
   font-family: var(--font);
   font-size: var(--fs-md);
@@ -260,23 +259,17 @@ h3) {
    الشعار داخل لوح أبيض (ملف الشعار بخلفية بيضاء)، ثم فاصل واسم المنصة.
    التنقل في المنتصف بمؤشر ذهبي، والجرس وحرف المستخدم في الطرف المقابل. */
 #topbar {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 30;
   isolation: isolate;
   color: var(--white);
 }
 
 #topbar .topbar-inner {
-  width: min(var(--shell), calc(100% - var(--shell-gutter)));
-  margin-inline: auto;
   display: grid;
   align-items: center;
 }
 
 #topbar .brand {
   grid-area: brand;
-  justify-self: start;
   min-width: 0;
   max-width: 100%;
   display: inline-flex;
@@ -293,14 +286,8 @@ h3) {
 }
 
 #topbar .brand-logo {
-  width: auto;
-  max-width: 160px;
   flex: 0 0 auto;
-  box-sizing: content-box;
   display: block;
-  object-fit: contain;
-  border-radius: 10px;
-  background: var(--white);
 }
 
 #topbar .brand-text {
@@ -311,24 +298,16 @@ h3) {
   line-height: 1.35;
 }
 
-#topbar .brand-logo + .brand-text {
-  padding-inline-start: var(--gap-4);
-  border-inline-start: 1px solid rgba(255, 255, 255, .2);
-}
 
 #topbar .brand-text b {
   overflow: hidden;
   color: var(--white);
-  font-size: var(--fs-md);
-  font-weight: 600;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 #topbar .brand-text small {
   overflow: hidden;
-  color: rgba(255, 255, 255, .7);
-  font-size: var(--fs-xs);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -350,8 +329,6 @@ h3) {
   display: inline-flex;
   align-items: center;
   background: transparent;
-  color: rgba(255, 255, 255, .75);
-  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -367,15 +344,7 @@ h3) {
   transition: transform 220ms var(--ease);
 }
 
-#topbar .nav-link:hover {
-  color: var(--white);
-}
 
-#topbar .nav-link.active {
-  color: var(--white);
-  box-shadow: none;
-  font-weight: 600;
-}
 
 #topbar .nav-link.active::after {
   transform: scaleX(1);
@@ -388,15 +357,9 @@ h3) {
 }
 
 @media (max-width: 1180px) {
-  #topbar .brand-text small {
-    display: none;
-  }
 }
 
 @media (max-width: 960px) {
-  #topbar .brand-logo + .brand-text {
-    display: none;
-  }
 }
 
 #topbar .nav-actions {
@@ -729,20 +692,13 @@ h3) {
 
 #app .page-greeting strong {
   color: var(--navy-deep);
-  font-weight: 600;
 }
 
 #app .page-greeting b {
   font-weight: 600;
 }
 
-#app .page-greeting b.is-new {
-  color: var(--teal-ink);
-}
 
-#app .page-greeting b.is-risk {
-  color: var(--danger);
-}
 
 #app .page-date {
   color: var(--muted);
@@ -1061,7 +1017,6 @@ h3) {
   --stat-watermark-o: .18;
   border-color: transparent;
   background: var(--stat-bg);
-  box-shadow: 0 1px 2px rgba(18, 52, 83, .08), 0 12px 24px -18px var(--stat-bg);
 }
 
 #app .stat-card[data-tone="total"] {
@@ -1094,10 +1049,6 @@ h3) {
     box-shadow: 0 2px 4px rgba(18, 52, 83, .08), 0 18px 32px -18px var(--stat-bg, var(--iu-navy));
   }
 
-  #app .stat-card:hover .stat-icon::before,
-  #app .stat-card:hover .stat-icon::after {
-    transform: rotate(45deg);
-  }
 }
 
 @container (max-width: 200px) {
@@ -1133,18 +1084,11 @@ h3) {
     gap: 10px;
   }
 
-  #app .stat-card {
-    min-height: 120px;
-    padding: var(--gap-4);
-  }
 
   #app .stat-card > div {
     min-height: 84px;
   }
 
-  #app .stat-card .stat-icon {
-    display: none;
-  }
 }
 
 /* ---------------------------------------------------------
@@ -2014,8 +1958,6 @@ h3) {
 /* شريط المراحل قاعدةُ البطاقة، بأرضية فاتحة تفصله عن بيانات الطلب
    وبارتفاع يكفي محتواه فقط */
 #app .ticket-progress {
-  padding: var(--gap-4) 28px var(--gap-3);
-  display: flex;
   align-items: flex-start;
   justify-content: space-between;
   position: relative;
@@ -2028,22 +1970,13 @@ h3) {
   min-width: 0;
   flex: 1 1 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  gap: var(--gap-2);
   position: relative;
   z-index: 1;
-  color: var(--muted);
   font-size: var(--fs-sm);
-  font-weight: 500;
   line-height: 1.4;
-  text-align: center;
 }
 
 #app .ticket-stage:not(:last-child)::after {
-  content: "";
-  display: block;
   position: absolute;
   z-index: 0;
   inset-block-start: 12px;
@@ -2059,7 +1992,6 @@ h3) {
 }
 
 #app .ticket-stage-marker {
-  flex: 0 0 auto;
   z-index: 1;
 }
 
@@ -2069,27 +2001,15 @@ h3) {
 }
 
 #app .ticket-stage.is-complete {
-  color: var(--ink-2);
   font-weight: 500;
 }
 
-#app .ticket-stage.is-complete .ticket-stage-marker {
-  border-color: var(--iu-teal);
-}
 
-#app .ticket-stage.is-current {
-  color: var(--navy-deep);
-  font-weight: 700;
-}
 
-#app .ticket-stage.is-current .ticket-stage-marker {
-  border-color: var(--iu-navy);
-}
 
 #app .ticket-stage-label {
   display: flex;
   align-items: center;
-  justify-content: center;
   position: relative;
   z-index: 1;
   white-space: normal;
@@ -2115,9 +2035,6 @@ h3) {
   padding: var(--gap-6);
 }
 
-#app .content-section + .content-section {
-  border-top: 1px solid var(--line);
-}
 
 #app .content-section :is(h2,
 h3) {
@@ -2213,8 +2130,6 @@ h3) {
 #app .solution-meta {
   display: block;
   margin-top: var(--gap-3);
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: var(--fs-sm);
   /* السطر عربي ثابت الاتجاه؛ <bdi> في القالب يعزل الاسم والتاريخ (UI-01) */
@@ -2540,21 +2455,15 @@ h3) {
   --toast-color: var(--danger);
   --toast-bg: var(--danger-bg);
   --toast-border: var(--danger-line);
-  position: fixed;
-  inset-block-start: 20px;
   inset-inline-end: 20px;
-  z-index: 1090;
   max-width: calc(100vw - 40px);
   display: flex;
   align-items: center;
   direction: rtl;
   text-align: start;
-  overflow: hidden;
-  border: 1px solid var(--toast-border);
   border-radius: var(--r-md);
   background: var(--toast-bg);
   color: var(--toast-color);
-  box-shadow: var(--sh-3);
   font-family: var(--font);
   font-weight: 600;
   opacity: 1;
@@ -2607,14 +2516,8 @@ h3) {
 
 /* مؤقّت الاختفاء: شريط سفلي ينضب. لا يلامس حدّ البطاقة فلا يتعارك معه. */
 #toast .toast-progress {
-  position: absolute;
-  inset-block-end: 0;
-  inset-inline: 0;
-  height: 3px;
   display: block;
   background: var(--toast-color);
-  opacity: .45;
-  transform-origin: right center;
   pointer-events: none;
   animation: iu-toast-bar 2000ms linear forwards;
 }
@@ -3477,7 +3380,6 @@ small) {
 }
 
 #app .analytics-card {
-  min-height: 340px;
   padding: var(--gap-5) var(--gap-6) var(--gap-6);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
@@ -3718,9 +3620,6 @@ small) {
     opacity: 1;
   }
 
-  #app .analytics-column-item:hover .analytics-column-value {
-    color: var(--navy-deep);
-  }
 }
 
 
@@ -4107,58 +4006,19 @@ html.iu-motion #app .m-chart .sla-line-point {
    ========================================================= */
 #topbar {
   padding-block-start: 14px;
-  background: transparent;
-  box-shadow: none;
 }
 
-#topbar .topbar-inner {
-  min-height: 64px;
-  padding-inline: 20px;
-  grid-template-areas: "brand nav actions";
-  column-gap: 28px;
-  border-radius: 18px;
-  background: var(--iu-navy);
-  box-shadow: 0 10px 24px -16px rgba(13, 41, 66, .6);
-}
 
-#topbar .brand-logo {
-  height: 28px;
-  padding: 5px 9px;
-}
 
-#topbar .brand-logo + .brand-text {
-  display: none;
-}
 
 #topbar .main-nav {
-  align-self: center;
   align-items: center;
-  gap: 6px;
 }
 
-#topbar .nav-link {
-  min-height: 40px;
-  padding: 0 16px;
-  border-radius: 10px;
-  font-size: var(--fs-sm);
-  transition: background-color 160ms var(--ease), color 160ms var(--ease);
-}
 
-#topbar .nav-link::after {
-  display: none;
-}
 
-#topbar .nav-link:hover {
-  background: rgba(255, 255, 255, .07);
-}
 
-#topbar .nav-link.active {
-  background: rgba(255, 255, 255, .12);
-}
 
-#topbar .icon-button {
-  border-radius: 10px;
-}
 
 @media (max-width: 720px) {
   #topbar {
@@ -4166,24 +4026,11 @@ html.iu-motion #app .m-chart .sla-line-point {
   }
 
   #topbar .topbar-inner {
-    width: calc(100% - 20px);
     padding: 0 12px 8px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: 56px auto;
-    grid-template-areas: "brand actions"
-      "nav   nav";
     border-radius: 16px;
   }
 
-  #topbar .main-nav {
-    justify-self: stretch;
-  }
 
-  #topbar .nav-link {
-    flex: 1 1 0;
-    justify-content: center;
-    min-height: 38px;
-  }
 }
 
 /* بطاقات الإحصاء ثابتة عند التمرير: لا تغيّر لونها ولا ظلها ولا موضعها */
@@ -4385,26 +4232,11 @@ textarea) {
 }
 
 /* الهيدر: روابط التنقل في منتصف الشريط */
-#topbar .topbar-inner {
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-}
 
-#topbar .main-nav {
-  justify-self: center;
-}
 
-#topbar .nav-actions {
-  justify-self: end;
-}
 
 @media (max-width: 720px) {
-  #topbar .topbar-inner {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
 
-  #topbar .main-nav {
-    justify-self: stretch;
-  }
 }
 
 /* رأس تفاصيل الطلب: بلا خطوط فاصلة، وكل معلومة بمربع أيقونة */
@@ -4425,37 +4257,16 @@ textarea) {
   gap: var(--gap-4) var(--gap-6);
 }
 
-#app .detail-meta-item {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--gap-3);
-}
 
 #app .detail-meta-item .meta-icon {
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--navy-soft);
   border: 1px solid var(--navy-tint);
-  color: var(--iu-navy);
 }
 
 #app .detail-meta-item .meta-icon .icon,
 #app .detail-meta-item .meta-icon svg {
-  width: 18px;
-  height: 18px;
   color: currentColor;
 }
 
-#app .detail-meta-item .meta-text {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
 
 #app .detail-meta-item strong > .icon {
   display: none;
@@ -4477,26 +4288,13 @@ textarea) {
 
 /* مراحل الطلب: كل مرحلة وردة ثمانية (مربعان متراكبان بزاوية 45°) مستوحاة من نقش الهوية */
 #app .ticket-stage-marker {
-  width: 36px;
-  height: 36px;
   position: relative;
   isolation: isolate;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
   transition: color 200ms var(--ease);
 }
 
 #app .ticket-stage-marker::before,
 #app .ticket-stage-marker::after {
-  content: "";
   position: absolute;
   inset: 5px;
   z-index: -1;
@@ -4510,10 +4308,6 @@ textarea) {
   transform: rotate(45deg);
 }
 
-#app .ticket-stage.is-complete .ticket-stage-marker {
-  color: var(--white);
-  background: transparent;
-}
 
 #app .ticket-stage.is-complete .ticket-stage-marker::before,
 #app .ticket-stage.is-complete .ticket-stage-marker::after {
@@ -4521,11 +4315,6 @@ textarea) {
   border-color: var(--iu-teal);
 }
 
-#app .ticket-stage.is-current .ticket-stage-marker {
-  color: var(--white);
-  background: transparent;
-  box-shadow: none;
-}
 
 #app .ticket-stage.is-current .ticket-stage-marker::before,
 #app .ticket-stage.is-current .ticket-stage-marker::after {
@@ -4541,11 +4330,6 @@ textarea) {
   box-shadow: 0 0 0 4px var(--navy-tint);
 }
 
-#app .ticket-stage-marker .icon,
-#app .ticket-stage-marker svg {
-  width: 15px;
-  height: 15px;
-}
 
 
 
@@ -4648,16 +4432,10 @@ textarea) {
 #app .detail-kicker .kicker-main > .icon { display: none; }
 
 /* أيقونات بيانات الطلب: مربع ناعم كحلي فاتح بجانب كل بيان */
-#app .detail-meta-item {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--gap-3);
-}
 #app .detail-meta-item .meta-icon {
   width: 36px;
   height: 36px;
   flex: 0 0 36px;
-  display: grid;
   place-items: center;
   border-radius: 10px;
   background: var(--navy-soft);
@@ -4683,21 +4461,11 @@ textarea) {
 :root { --topbar-h: 68px; }
 
 #topbar {
-  position: fixed;
-  inset-block-start: 0;
-  inset-inline: 0;
-  z-index: 50;
   padding: 0;
-  background: var(--iu-navy);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, .06), 0 8px 20px -14px rgba(13, 41, 66, .55);
 }
 
-#topbar ~ #app,
-#topbar ~ .page-shell { margin-block-start: var(--topbar-h); }
 
 #topbar .topbar-inner {
-  width: min(var(--shell), calc(100% - var(--shell-gutter)));
-  min-height: var(--topbar-h);
   padding: 0;
   margin-inline: auto;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -4709,7 +4477,6 @@ textarea) {
   box-shadow: none;
 }
 
-#topbar .brand-logo { height: 30px; padding: 5px 10px; border-radius: 10px; }
 
 #topbar .brand-logo + .brand-text {
   display: flex;
@@ -4717,7 +4484,7 @@ textarea) {
   border-inline-start: 1px solid rgba(255, 255, 255, .18);
 }
 
-#topbar .brand-text b { font-size: var(--fs-md); font-weight: 600; letter-spacing: 0; }
+#topbar .brand-text b { font-weight: 600; letter-spacing: 0; }
 #topbar .brand-text small { font-size: var(--fs-xs); color: rgba(255, 255, 255, .68); }
 
 #topbar .main-nav {
@@ -4775,7 +4542,6 @@ textarea) {
     padding-block-end: 10px;
   }
 
-  #topbar .brand-logo { height: 26px; }
   #topbar .main-nav { justify-self: stretch; }
   #topbar .nav-link { flex: 1 1 0; justify-content: center; min-height: 36px; padding: 0 12px; }
 }
@@ -4891,10 +4657,6 @@ body.iu-portal #wrap::after,
 }
 
 #toast .toast-progress {
-  inset-block-end: 0;
-  inset-inline: 0;
-  height: 3px;
-  border-radius: 0;
   opacity: .6;
 }
 
@@ -4914,13 +4676,11 @@ body.iu-portal #wrap::after,
 /* ملاحظة أوقات الدعم تحت أزرار النموذج */
 #app .support-hours-note {
   margin: var(--gap-4) 0 0;
-  max-width: 62ch;
   display: block;
   color: var(--teal-ink);
   font-size: var(--fs-sm);
   font-weight: 500;
   line-height: 1.8;
-  text-align: start;
   text-wrap: pretty;
 }
 
@@ -4955,9 +4715,6 @@ body.iu-portal #wrap::after,
 
 
 /* الهيدر: خط ذهبي من الهوية أسفل الشريط */
-#topbar {
-  border-bottom: 3px solid var(--iu-gold);
-}
 
 
 
@@ -5026,9 +4783,6 @@ body.iu-portal #wrap::after,
 /* نقش بطاقة الإحصاء يغطي البطاقة كاملة بلا حافة مقطوعة */
 #app .stat-card[data-tone]::before {
   inset: 0;
-  width: auto;
-  -webkit-mask-image: none;
-  mask-image: none;
 }
 
 
@@ -5094,17 +4848,10 @@ body.iu-portal #wrap::after,
 /* الشعار أكبر وأوضح في الهيدر */
 :root { --topbar-h: 76px; }
 #topbar .topbar-inner { min-height: var(--topbar-h); }
-#topbar .brand-logo {
-  height: 48px;
-  max-width: 200px;
-  padding: 4px 8px;
-  border-radius: 12px;
-}
 #topbar .brand-text b { font-size: 1.05rem; }
 
 @media (max-width: 720px) {
   :root { --topbar-h: 116px; }
-  #topbar .brand-logo { height: 38px; padding: 3px 6px; }
 }
 
 
@@ -5135,20 +4882,11 @@ body.iu-portal #wrap::after,
 /* شعار المعهد (مربع وشفاف): أكبر، بلا لوح أبيض، على الكحلي مباشرة */
 :root { --topbar-h: 84px; }
 #topbar .brand-logo {
-  height: 64px;
-  width: 64px;
   max-width: none;
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-  object-fit: contain;
-  filter: none;
-  box-shadow: none;
 }
 
 @media (max-width: 720px) {
   :root { --topbar-h: 124px; }
-  #topbar .brand-logo { height: 52px; width: 52px; }
 }
 
 /* الهيدر: لوح كحلي عائم بعرض المحتوى، بنفس انحناء حواف الكروت (محدِّد أقوى ليتغلب على أي قاعدة سابقة) */
@@ -5164,11 +4902,9 @@ body #topbar .topbar-inner {
   background: var(--iu-navy);
   box-shadow: 0 12px 28px -18px rgba(13, 41, 66, .65);
 }
-#topbar .brand-logo { height: 56px; width: 56px; }
 @media (max-width: 720px) {
   body #topbar { padding-block-start: 8px; }
   body #topbar .topbar-inner { width: calc(100% - 16px); min-height: 0; padding: 0 14px 10px; border-radius: var(--r-lg); }
-  #topbar .brand-logo { height: 46px; width: 46px; }
 }
 
 /* بطاقات الإحصاء: بطاقة توضيح طريقة الحساب عند التمرير أو التركيز بلوحة المفاتيح */
