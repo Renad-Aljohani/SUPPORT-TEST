@@ -672,8 +672,15 @@ class SupportTicket(models.Model):
         (the very intervals get_work_hours_count sums), avoiding N+1 queries
         when SLA metrics are computed for many tickets.
         """
-        range_start = self._as_utc(range_start)
-        range_end = self._as_utc(range_end)
+        def aware(value):
+            # _as_utc() relies on fields.Datetime.to_datetime(), which rejects
+            # tz-aware values in 17.0; metrics pass already-aware datetimes.
+            if getattr(value, 'tzinfo', None):
+                return value.astimezone(UTC)
+            return self._as_utc(value)
+
+        range_start = aware(range_start)
+        range_end = aware(range_end)
         intervals = [
             (begin, stop)
             for begin, stop, _meta in calendar._work_intervals_batch(
@@ -683,8 +690,8 @@ class SupportTicket(models.Model):
         starts = [begin for begin, _stop in intervals]
 
         def hours(start, end):
-            start = self._as_utc(start)
-            end = self._as_utc(end)
+            start = aware(start)
+            end = aware(end)
 
             if end <= start:
                 return 0.0
