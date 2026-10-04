@@ -262,6 +262,55 @@ class TestSupportSLA(SupportQACommon):
             metrics = t.get_sla_metrics('resolution')
         self.assertAlmostEqual(metrics['percent'], 25.0, delta=0.5)
 
+    def _metrics_for(self, tickets):
+        """Batch helper when available, otherwise the per-ticket path the controller used before."""
+        batch = getattr(tickets, '_get_sla_metrics_batch', None)
+        if batch:
+            return batch()
+        return {t.id: {k: t.get_sla_metrics(k) for k in ('response', 'resolution')} for t in tickets}
+
+    def _varied_tickets(self, count):
+        tickets = self.env['support.ticket']
+        for i in range(count):
+            day = 4 + (i % 4)                       # Sun..Wed
+            t = self._submit(f'2026-10-0{day} 06:00:00', self.cat_tech, ['low', 'medium', 'high'][i % 3])
+            kind = i % 5
+            if kind >= 1:
+                self._claim(t, f'2026-10-0{day} 06:30:00')
+            if kind == 2:
+                with freeze_time(f'2026-10-0{day} 07:00:00'):
+                    t.with_user(self.mgr1).pause_resolution_sla('waiting_internal')
+            if kind in (3, 4):
+                self._solve(t, f'2026-10-0{day} 09:00:00')
+            if kind == 4:
+                self._reopen(t, f'2026-10-0{day} 10:00:00')
+            tickets |= t
+        return tickets
+
+    def test_20_batch_metrics_equal_individual(self):
+        """PERF-01 fix must not change any SLA number."""
+        tickets = self._varied_tickets(15)
+        with freeze_time('2026-10-08 11:00:00'):
+            batch = self._metrics_for(tickets)
+            for t in tickets:
+                for kind in ('response', 'resolution'):
+                    self.assertEqual(batch[t.id][kind], t.get_sla_metrics(kind), (t.ticket_number, kind))
+
+    def test_21_sla_metrics_queries_do_not_grow_per_ticket(self):
+        """PERF-01: no N+1 - SQL count for 25 tickets ~ count for 5 tickets."""
+        few = self._varied_tickets(5)
+        many = few | self._varied_tickets(20)
+        with freeze_time('2026-10-08 11:00:00'):
+            self.env.invalidate_all()
+            before = self.cr.sql_log_count
+            self._metrics_for(few)
+            q_few = self.cr.sql_log_count - before
+            self.env.invalidate_all()
+            before = self.cr.sql_log_count
+            self._metrics_for(many)
+            q_many = self.cr.sql_log_count - before
+        self.assertLess(q_many - q_few, 15, f'queries grew from {q_few} to {q_many} for 20 extra tickets')
+
     def test_12_sla_cron_is_scheduled(self):
         """FR-SYS-18/19: breach detection and near-breach alerts must run automatically."""
         crons = self.env['ir.cron'].sudo().with_context(active_test=False).search([
