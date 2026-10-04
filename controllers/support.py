@@ -5,7 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from dateutil.relativedelta import relativedelta
-from psycopg2 import IntegrityError
+from psycopg2 import IntegrityError, OperationalError
 
 from odoo import http, fields
 from odoo.http import content_disposition, request
@@ -49,7 +49,10 @@ def _json_errors(endpoint):
     def wrapper(self, *args, **kwargs):
         try:
             return endpoint(self, *args, **kwargs)
-        except HTTPException:
+        except (HTTPException, OperationalError):
+            # OperationalError covers PostgreSQL serialization/lock failures:
+            # Odoo retries the whole request natively (service.model.retrying),
+            # e.g. two managers claiming the same ticket -> one 200, one 409.
             raise
         except (AccessError, MissingError) as error:
             request.env.cr.rollback()
