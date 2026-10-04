@@ -191,4 +191,52 @@
 
     </record>
 
+    <!-- DN-02: المستخدمون Internal Users لكن دون كشف بيانات مستخدمين غير لازمة.
+         قواعد ir.rule أصلية على res.users ودليل الموظفين؛ القيود لأعضاء المنصة فقط.
+         الحسابات غير النشطة (المستخدم العام للموقع، OdooBot) تبقى مقروءة لأن أودو يحتاجها داخليًا. -->
+    <record id="rule_res_users_support_employee" model="ir.rule">
+        <field name="name">Support Employee - users: self and support managers only</field>
+        <field name="model_id" ref="base.model_res_users"/>
+        <field name="groups" eval="[(4, ref('website.group_support_employee'))]"/>
+        <field name="domain_force">['|', '|', ('id', '=', user.id), ('active', '=', False), ('groups_id', 'in', [user.env.ref('website.group_support_manager').id])]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_res_users_support_manager" model="ir.rule">
+        <field name="name">Support Manager - users: platform users only</field>
+        <field name="model_id" ref="base.model_res_users"/>
+        <field name="groups" eval="[(4, ref('website.group_support_manager'))]"/>
+        <field name="domain_force">['|', '|', ('id', '=', user.id), ('active', '=', False), ('groups_id', 'in', [user.env.ref('website.group_support_manager').id, user.env.ref('website.group_support_employee').id])]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- مدير النظام لا يُقيَّد (قد يكون عضوًا في مجموعة مسؤول الدعم) -->
+    <record id="rule_res_users_system_all" model="ir.rule">
+        <field name="name">Settings - all users</field>
+        <field name="model_id" ref="base.model_res_users"/>
+        <field name="groups" eval="[(4, ref('base.group_system')), (4, ref('base.group_erp_manager'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_hr_employee_public_support_employee" model="ir.rule">
+        <field name="name">Support Employee - employee directory: own record only</field>
+        <field name="model_id" ref="hr.model_hr_employee_public"/>
+        <field name="groups" eval="[(4, ref('website.group_support_employee'))]"/>
+        <field name="domain_force">[('user_id', '=', user.id)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
 </odoo>
