@@ -1,15 +1,18 @@
 import base64
+import functools
+import logging
 from collections import defaultdict
 from pathlib import Path
 
 from dateutil.relativedelta import relativedelta
-from psycopg2 import IntegrityError
+from psycopg2 import IntegrityError, OperationalError
 
 from odoo import http, fields
 from odoo.http import content_disposition, request
 from odoo.tools import html2plaintext, html_escape
 from odoo.tools.mimetypes import guess_mimetype
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, MissingError, UserError, ValidationError
+from werkzeug.exceptions import HTTPException
 
 
 GROUP_SUPPORT_EMPLOYEE = 'website.group_support_employee'
@@ -30,6 +33,48 @@ ALLOWED_ATTACHMENT_TYPES = {
     'video/mp4': {'.mp4'},
     'video/quicktime': {'.mov'},
 }
+
+
+_logger = logging.getLogger(__name__)
+
+
+def _json_errors(endpoint):
+    """Keep the JSON contract {success, message} for every failure (API doc §5).
+
+    Business-rule errors raised by the ORM (ValidationError/UserError/
+    AccessError) used to escape as an HTML error page. The transaction is
+    rolled back first so no partial record survives a failed request.
+    """
+    @functools.wraps(endpoint)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return endpoint(self, *args, **kwargs)
+        except (HTTPException, OperationalError):
+            # OperationalError covers PostgreSQL serialization/lock failures:
+            # Odoo retries the whole request natively (service.model.retrying),
+            # e.g. two managers claiming the same ticket -> one 200, one 409.
+            raise
+        except (AccessError, MissingError) as error:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'success': False, 'message': str(error.args[0] if error.args else error)},
+                status=403 if isinstance(error, AccessError) else 404,
+            )
+        except UserError as error:
+            request.env.cr.rollback()
+            return request.make_json_response(
+                {'success': False, 'message': str(error.args[0] if error.args else error)},
+                status=400,
+            )
+        except Exception:
+            request.env.cr.rollback()
+            _logger.exception('Support platform request failed: %s', request.httprequest.path)
+            return request.make_json_response(
+                {'success': False, 'message': 'حدث خطأ غير متوقع، يرجى المحاولة لاحقًا.'},
+                status=500,
+            )
+
+    return wrapper
 
 
 class SupportController(http.Controller):
@@ -231,6 +276,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=False,
     )
+    @_json_errors
     def support_csrf(self, **kwargs):
         if not self._is_support_user():
             return request.not_found()
@@ -325,6 +371,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def hold_support_ticket(self, **kwargs):
         if not request.env.user.has_group(
             'website.group_support_manager'
@@ -416,13 +463,17 @@ class SupportController(http.Controller):
             )
 
 
+            reason_label = dict(
+                ticket._fields['sla_pause_reason'].selection
+            ).get(reason, reason)
+
             self._add_ticket_history(
-             ticket=ticket,
-             action='hold',
-             old_status='processing',
-             new_status='on_hold',
-             note='تم تعليق الطلب مؤقتًا'
-           )
+                ticket=ticket,
+                action='hold',
+                old_status='processing',
+                new_status='on_hold',
+                note=f'تم تعليق الطلب مؤقتًا — السبب: {reason_label}',
+            )
             
         except ValidationError as error:
             return request.make_json_response(
@@ -446,6 +497,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def resume_support_ticket(self, **kwargs):
         if not request.env.user.has_group(
             'website.group_support_manager'
@@ -540,6 +592,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True,
     )
+    @_json_errors
     def get_support_notifications(self, **kwargs):
         partner = request.env.user.partner_id
 
@@ -622,6 +675,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def mark_support_notifications_read(self, **kwargs):
         data = request.httprequest.get_json(
             silent=True
@@ -682,6 +736,7 @@ class SupportController(http.Controller):
         website=True,
     )
 
+    @_json_errors
     def create_support_ticket(self, **kwargs):
         if not self._is_support_employee():
              return request.make_json_response(
@@ -700,7 +755,6 @@ class SupportController(http.Controller):
             data = json_data
         else:
             data = request.httprequest.form.to_dict()
-            print("CREATE DATA =", data)
 
         title = (
             data.get('title') or ''
@@ -757,21 +811,6 @@ class SupportController(http.Controller):
                 },
                 status=400
             )                                                                
-        ticket_number = (
-            request.env['ir.sequence']
-            .sudo()
-            .next_by_code('support.ticket')
-        )
-
-        if not ticket_number:
-            return request.make_json_response(
-                {
-
-                    'success': False,
-                    'message': 'تعذر إنشاء رقم الطلب.',
-                },
-                status=500
-            )
         # فحص المرفق قبل إنشاء الطلب
         attachment_file = request.httprequest.files.get(
             'attachment'
@@ -815,6 +854,23 @@ class SupportController(http.Controller):
 
         priority = priority_value
 
+        # الرقم المرجعي يُستهلك فقط بعد نجاح كل التحققات (لا فجوات بسبب طلبات مرفوضة).
+        ticket_number = (
+            request.env['ir.sequence']
+            .sudo()
+            .next_by_code('support.ticket')
+        )
+
+        if not ticket_number:
+            return request.make_json_response(
+                {
+
+                    'success': False,
+                    'message': 'تعذر إنشاء رقم الطلب.',
+                },
+                status=500
+            )
+
         employee = self._get_current_employee()
         ticket_values = {
             'ticket_number': ticket_number,
@@ -830,8 +886,8 @@ class SupportController(http.Controller):
         if employee and employee.department_id:
             ticket_values['department_id'] = employee.department_id.id
 
-        ticket = request.env['support.ticket'].create(ticket_values)
-        ticket._apply_sla_policy()
+        ticket = request.env['support.ticket'].sudo().create(ticket_values)
+        ticket.sudo()._apply_sla_policy()
 
         
         self._add_ticket_history(
@@ -851,7 +907,7 @@ class SupportController(http.Controller):
         )
 
         if support_partners:
-            message = ticket.message_post(
+            message = ticket._support_notify(
                 subject='طلب دعم جديد',
                 body=(
                     f'تم إنشاء طلب دعم جديد '
@@ -1004,6 +1060,7 @@ class SupportController(http.Controller):
     methods=['POST'],
     website=True,
    )
+    @_json_errors
     def save_support_draft(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1014,7 +1071,6 @@ class SupportController(http.Controller):
                 status=403
             )
         data = request.httprequest.form.to_dict()
-        print("DRAFT DATA =", data)
        
         draft_id = data.get('draft_id')
 
@@ -1195,6 +1251,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def submit_support_draft(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1295,12 +1352,12 @@ class SupportController(http.Controller):
                 status=500
             )
 
-        draft.write({
+        draft.sudo().write({
             'ticket_number': ticket_number,
             'status': 'new',
             'submitted_at': fields.Datetime.now(),
         })
-        draft._apply_sla_policy()
+        draft.sudo()._apply_sla_policy()
 
         # إشعار جميع مسؤولي الدعم بعد إرسال المسودة
         support_group = request.env.ref(
@@ -1311,7 +1368,7 @@ class SupportController(http.Controller):
             'partner_id'
         )
         if support_partners:
-            message = draft.message_post(
+            message = draft._support_notify(
                 subject='طلب دعم جديد',
                 body=(
                     f'تم إنشاء طلب دعم جديد '
@@ -1361,6 +1418,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def delete_support_draft(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1444,6 +1502,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True
     )
+    @_json_errors
     def get_support_draft(self, draft_id, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1507,6 +1566,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True
     )
+    @_json_errors
     def get_employee_tickets(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -1676,6 +1736,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def claim_support_ticket(self, **kwargs):
         if not request.env.user.has_group(
             'website.group_support_manager'
@@ -1752,7 +1813,7 @@ class SupportController(http.Controller):
                 else 'failed'
             )
 
-        ticket.write({
+        ticket.sudo().write({
             'assignee_id': request.env.user.id,
             'status': 'processing',
             'first_response_at': first_response_at,
@@ -1764,13 +1825,13 @@ class SupportController(http.Controller):
             sla_response_status == 'failed'
             and ticket.sla_response_alert_level < 100
         ):
-            sent = ticket._send_sla_alert(
+            sent = ticket.sudo()._send_sla_alert(
                 'response',
                 100
             )
 
             if sent:
-                ticket.write({
+                ticket.sudo().write({
                     'sla_response_alert_level': 100,
                 })
 
@@ -1780,13 +1841,13 @@ class SupportController(http.Controller):
             ticket.sla_resolution_status == 'failed'
             and ticket.sla_resolution_alert_level < 100
         ):
-            sent = ticket._send_sla_alert(
+            sent = ticket.sudo()._send_sla_alert(
                 'resolution',
                 100
             )
 
             if sent:
-                ticket.write({
+                ticket.sudo().write({
                     'sla_resolution_alert_level': 100,
                 })
 
@@ -1795,7 +1856,7 @@ class SupportController(http.Controller):
             ticket.requester_id.partner_id
         )       
 
-        message = ticket.message_post(
+        message = ticket._support_notify(
             subject='تم استلام طلبك',
             body=(
                 f'تم استلام الطلب '
@@ -1873,6 +1934,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True
     )
+    @_json_errors
     def get_manager_tickets(self, **kwargs):       
         if not request.env.user.has_group('website.group_support_manager'):
             return request.make_json_response(
@@ -1914,6 +1976,9 @@ class SupportController(http.Controller):
             attachments_by_ticket,
         ) = self._ticket_related_data(tickets)
 
+        # مقاييس SLA لكل الطلبات بجلب فترات العمل مرة واحدة لكل تقويم (بدل N+1).
+        sla_metrics = tickets._get_sla_metrics_batch()
+
         for ticket in tickets:
 
             rating_record = ratings_by_ticket.get(ticket.id)
@@ -1935,13 +2000,8 @@ class SupportController(http.Controller):
                     )
                 })
 
-            response_sla = ticket.get_sla_metrics(
-                'response'
-            )
-
-            resolution_sla = ticket.get_sla_metrics(
-                'resolution'
-            )
+            response_sla = sla_metrics[ticket.id]['response']
+            resolution_sla = sla_metrics[ticket.id]['resolution']
 
             data.append({
                 'id': ticket.ticket_number,
@@ -2118,6 +2178,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True,
     )
+    @_json_errors
     def get_support_analytics(self, **kwargs):
 
         if not self._is_support_manager():
@@ -2211,6 +2272,8 @@ class SupportController(http.Controller):
         # تحليل الطلبات
         # -------------------------------------------------
 
+        work_hours_by_calendar = tickets._get_sla_work_hours_map()
+
         for ticket in tickets:
 
             calendar = (
@@ -2219,6 +2282,7 @@ class SupportController(http.Controller):
                 or ticket.company_id.resource_calendar_id
                 or request.env.company.resource_calendar_id
             )
+            work_hours = work_hours_by_calendar.get(calendar)
 
             # الشهر الذي ينتمي إليه الطلب
             submitted_local = (
@@ -2325,10 +2389,10 @@ class SupportController(http.Controller):
                 )
 
                 response_time = (
-                    calendar.get_work_hours_count(
-                        start,
-                        end,
-                        compute_leaves=True,
+                    work_hours(start, end)
+                    if work_hours
+                    else calendar.get_work_hours_count(
+                        start, end, compute_leaves=True,
                     )
                 )
 
@@ -2371,10 +2435,10 @@ class SupportController(http.Controller):
                 )
 
                 resolution_time = (
-                    calendar.get_work_hours_count(
-                        start,
-                        end,
-                        compute_leaves=True,
+                    work_hours(start, end)
+                    if work_hours
+                    else calendar.get_work_hours_count(
+                        start, end, compute_leaves=True,
                     )
                 )
 
@@ -2515,7 +2579,7 @@ class SupportController(http.Controller):
                     1
                 )
                 if completed
-                else 0.0
+                else None  # شهر بلا طلبات مُقيّمة: لا بيانات، وليس 0%
             )
 
             response_value = (
@@ -2531,7 +2595,7 @@ class SupportController(http.Controller):
                 if month[
                     'response_hours'
                 ]
-                else 0.0
+                else None
             )
 
             resolution_value = (
@@ -2551,7 +2615,7 @@ class SupportController(http.Controller):
                 if month[
                     'resolution_hours'
                 ]
-                else 0.0
+                else None
             )
 
             trend_labels.append(
@@ -2664,6 +2728,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def submit_ticket_solution(self, **kwargs):
         if not request.env.user.has_group('website.group_support_manager'):
             return request.make_json_response(
@@ -2741,7 +2806,7 @@ class SupportController(http.Controller):
                 else 'failed'
             )
 
-        ticket.write({
+        ticket.sudo().write({
             'solution': solution,
             'solution_at': solution_at,
             'status': 'waiting_confirmation',
@@ -2756,7 +2821,7 @@ class SupportController(http.Controller):
             note='تم إرسال الحل'
         )
 
-        message = ticket.message_post(
+        message = ticket._support_notify(
             subject='تم إرسال حل للطلب',
             body=(
                 f'تم إرسال حل للطلب '
@@ -2801,6 +2866,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def employee_ticket_action(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -2876,7 +2942,7 @@ class SupportController(http.Controller):
 
         # تأكيد الحل وإغلاق الطلب
         if action == 'confirm':
-            ticket.write({
+            ticket.sudo().write({
             'status': 'closed',
             'closed_at': fields.Datetime.now(),
   
@@ -2893,7 +2959,7 @@ class SupportController(http.Controller):
             if ticket.assignee_id:
                 partner = ticket.assignee_id.partner_id
 
-                message = ticket.message_post(
+                message = ticket._support_notify(
                     subject='تم إغلاق الطلب',
                     body=(
                         f'تم تأكيد الحل وإغلاق الطلب '
@@ -2931,7 +2997,7 @@ class SupportController(http.Controller):
             })
         # المشكلة مستمرة وإعادة الطلب للمعالجة
         if action == 'reopen':
-            ticket.write({
+            ticket.sudo().write({
                 'status': 'processing',
                 'sla_resolution_status': 'in_progress',
                 'reopen_count': ticket.reopen_count + 1,
@@ -2951,7 +3017,7 @@ class SupportController(http.Controller):
             if ticket.assignee_id:
                 partner = ticket.assignee_id.partner_id
 
-                message = ticket.message_post(
+                message = ticket._support_notify(
                     subject='تمت إعادة فتح الطلب',
                     body=(
                         f'تمت إعادة فتح الطلب '
@@ -2995,6 +3061,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def submit_ticket_rating(self, **kwargs):
         if not self._is_support_employee():
             return request.make_json_response(
@@ -3116,7 +3183,7 @@ class SupportController(http.Controller):
         if ticket.assignee_id:
             partner = ticket.assignee_id.partner_id
 
-            message = ticket.message_post(
+            message = ticket._support_notify(
                 subject='تم تقييم الخدمة',
                 body=(
                     f'تم تقييم الطلب '
@@ -3162,6 +3229,7 @@ class SupportController(http.Controller):
         methods=['GET'],
         website=True,
     )
+    @_json_errors
     def get_ticket_messages(self, **kwargs):
 
         ticket_number = (
@@ -3325,6 +3393,7 @@ class SupportController(http.Controller):
         methods=['POST'],
         website=True,
     )
+    @_json_errors
     def send_ticket_message(self, **post):
 
         ticket_number = (

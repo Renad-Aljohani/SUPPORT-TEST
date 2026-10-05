@@ -1,4 +1,5 @@
-from odoo import models, fields
+from odoo import api, fields, models
+from odoo.exceptions import ValidationError
 
 
 class SupportRating(models.Model):
@@ -35,6 +36,22 @@ class SupportRating(models.Model):
         required=True,
         default=lambda self: self.env.user,
     )
+
+    @api.constrains('ticket_id', 'rated_by')
+    def _check_rating_rules(self):
+        """BR-14: only the requester rates, and only after closure."""
+        for rating in self:
+            ticket = rating.ticket_id.sudo()
+
+            if ticket.status != 'closed':
+                raise ValidationError(
+                    'لا يمكن تقييم الطلب قبل إغلاقه.'
+                )
+
+            if rating.rated_by != ticket.requester_id:
+                raise ValidationError(
+                    'التقييم متاح لصاحب الطلب فقط.'
+                )
 
     _sql_constraints = [
         (

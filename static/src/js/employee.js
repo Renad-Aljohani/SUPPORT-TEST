@@ -10,6 +10,23 @@ let csrfToken =
   window.odoo?.csrf_token ||
   '';
 
+/* انتهاء الجلسة: مسارات auth='user' تُعيد التوجيه إلى /web/login، فيتبع fetch
+   التحويل ويستلم صفحة HTML بدل JSON. نعيد المستخدم لتسجيل الدخول بدل خطأ تحليل. */
+function redirectIfSessionExpired(response) {
+  let path = '';
+  try {
+    path = new URL(response.url, window.location.origin).pathname;
+  } catch (error) {
+    path = '';
+  }
+  if (response.redirected && path.startsWith('/web/login')) {
+    const back = window.location.pathname + window.location.search;
+    window.location.assign(`/web/login?redirect=${encodeURIComponent(back)}`);
+    throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى.');
+  }
+  return response;
+}
+
 async function getCsrfToken() {
   if (csrfToken) {
     return csrfToken;
@@ -25,6 +42,7 @@ async function getCsrfToken() {
     }
   );
 
+  redirectIfSessionExpired(response);
   const result = await response.json();
 
   if (!response.ok || !result.csrf_token) {
@@ -70,7 +88,7 @@ async function supportFetch(resource, options = {}) {
     ...(config.headers || {}),
   };
 
-  return fetch(url, config);
+  return redirectIfSessionExpired(await fetch(url, config));
 }
 
 const isEmployeePage =
@@ -4654,7 +4672,7 @@ async function renderDetail(id) {
 
                     <p class="solution-text">${escapeHTML(ticket.solution)}</p>
 
-                    <small class="solution-meta">${escapeHTML(ticket.assignee || '')} — ${escapeHTML(formatDateTime(ticket.solutionAt))}</small>
+                    <small class="solution-meta"><bdi>${escapeHTML(ticket.assignee || '')}</bdi> — <bdi>${escapeHTML(formatDateTime(ticket.solutionAt))}</bdi></small>
 
                   </div>
 
@@ -4794,9 +4812,10 @@ function renderEmployeeAction(
 
           <p>
 
-            ${'★'.repeat(
+            <span role="img" aria-label="التقييم ${Number(ticket.rating.value)} من 5">${'★'.repeat(
         ticket.rating.value
-      )}
+      )}${'☆'.repeat(Math.max(0, 5 - Number(ticket.rating.value)))}</span>
+            <small>(${Number(ticket.rating.value)} من 5)</small>
 
 
             ${ticket.rating.comment

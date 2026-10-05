@@ -38,7 +38,7 @@ access_support_ticket_employee,support.ticket employee,model_support_ticket,webs
 access_support_ticket_history_employee,support.ticket.history employee,model_support_ticket_history,website.group_support_employee,1,0,0,0
 access_support_rating_employee,support.rating employee,model_support_rating,website.group_support_employee,1,0,1,0
 access_support_category_manager,support.category manager,model_support_category,website.group_support_manager,1,0,0,0
-access_support_ticket_manager,support.ticket manager,model_support_ticket,website.group_support_manager,1,1,0,0
+access_support_ticket_manager,support.ticket manager,model_support_ticket,website.group_support_manager,1,0,0,0
 access_support_ticket_history_manager,support.ticket.history manager,model_support_ticket_history,website.group_support_manager,1,0,0,0
 access_support_rating_manager,support.rating manager,model_support_rating,website.group_support_manager,1,0,0,0
 access_support_sla_policy_manager,support.sla.policy manager,model_support_sla_policy,website.group_support_manager,1,1,1,0

@@ -1,8 +1,13 @@
+import bisect
+from collections import defaultdict
+from datetime import timedelta
+
 from pytz import UTC
 from dateutil.relativedelta import relativedelta
 
 from odoo import models, fields, api
-from odoo.exceptions import ValidationError
+from odoo.tools import plaintext2html
+from odoo.exceptions import AccessError, ValidationError
 
 
 class SupportTicket(models.Model):
@@ -283,6 +288,93 @@ class SupportTicket(models.Model):
 
         return normalized_values
 
+    # الحقول الوحيدة التي يملك المستخدم تعديلها مباشرة (ORM/JSON-RPC)،
+    # وفقط على مسودته. كل ما عداها يتحكم به السيرفر عبر إجراءات الـcontroller
+    # بعد التحقق من الدور والملكية والحالة (BR-04، BR-07..BR-15).
+    _USER_DRAFT_FIELDS = frozenset({
+        'title',
+        'description',
+        'category_id',
+        'priority',
+        'department_id',
+    })
+
+    _PROTECTED_FIELDS = _USER_DRAFT_FIELDS | frozenset({
+        'company_id',
+        'ticket_number',
+        'status',
+        'requester_id',
+        'assignee_id',
+        'solution',
+        'solution_at',
+        'closed_at',
+        'reopen_count',
+        'submitted_at',
+        'first_response_at',
+    })
+
+    def _check_user_create_values(self, values_list):
+        """Non-superuser create is limited to the requester's own draft."""
+        if self.env.su:
+            return
+
+        allowed = self._USER_DRAFT_FIELDS | {'status', 'requester_id'}
+
+        for values in values_list:
+            if (
+                values.get('status', 'draft') != 'draft'
+                or values.get('requester_id', self.env.uid) != self.env.uid
+                or set(values) - allowed
+            ):
+                raise AccessError(
+                    'غير مصرح بإنشاء طلب بهذه البيانات مباشرة؛ '
+                    'يتم إرسال الطلب عبر منصة الدعم فقط.'
+                )
+
+    def _check_user_write_values(self, values):
+        """Block direct writes on server-controlled fields (BR-07..BR-15).
+
+        Users (employees, support managers, other internal users) may only
+        edit the content fields of their own draft. Workflow fields (status,
+        assignee, requester, solution, SLA, dates, counters) are written by
+        the platform actions under sudo() after role/ownership checks.
+        """
+        if self.env.su:
+            return
+
+        protected_keys = {
+            key for key in values
+            if key in self._PROTECTED_FIELDS or key.startswith('sla_')
+        }
+
+        for ticket in self:
+            changed = {
+                key for key in protected_keys
+                if not (
+                    key in ('status', 'requester_id')
+                    and (
+                        ticket[key].id
+                        if key == 'requester_id'
+                        else ticket[key]
+                    ) == values[key]
+                )
+            }
+
+            if not changed:
+                continue
+
+            if (
+                ticket.status == 'draft'
+                and ticket.requester_id.id == self.env.uid
+                and changed <= self._USER_DRAFT_FIELDS
+            ):
+                continue
+
+            raise AccessError(
+                'غير مصرح بتعديل هذه البيانات مباشرة: '
+                f'{", ".join(sorted(changed))}.'
+            )
+
     @api.model_create_multi
     def create(self, values_list):
         normalized_values_list = [
@@ -298,10 +390,13 @@ class SupportTicket(models.Model):
                 'يجب إنشاء الطلب بحالة مسودة أو جديد.'
             )
 
+        self._check_user_create_values(normalized_values_list)
+
         return super().create(normalized_values_list)
 
     def write(self, values):
         values = self._normalize_text_values(values)
+        self._check_user_write_values(values)
         new_status = values.get('status')
 
         if new_status:
@@ -443,9 +538,29 @@ class SupportTicket(models.Model):
             })
 
         return True
+    def _check_assignee_manager(self):
+        """Hold/resume are assignee-only support actions (FR-SUP-10/11).
+
+        These methods are public, hence callable through JSON-RPC: the
+        role and ownership checks must live here, not only in the controller.
+        """
+        self.ensure_one()
+
+        if self.env.su:
+            return
+
+        if (
+            not self.env.user.has_group('website.group_support_manager')
+            or self.assignee_id != self.env.user
+        ):
+            raise AccessError(
+                'هذا الإجراء متاح فقط لمسؤول الدعم المسند إليه الطلب.'
+            )
+
     def pause_resolution_sla(self, reason):
         self.ensure_one()
         self._lock_for_update()
+        self._check_assignee_manager()
 
         if self.status != 'processing':
             raise ValidationError(
@@ -464,7 +579,7 @@ class SupportTicket(models.Model):
                 'سبب تعليق الطلب غير صحيح.'
             )
 
-        self.write({
+        self.sudo().write({
             'status': 'on_hold',
             'sla_pause_started_at': fields.Datetime.now(),
             'sla_pause_reason': reason,
@@ -477,6 +592,7 @@ class SupportTicket(models.Model):
     def resume_resolution_sla(self):
         self.ensure_one()
         self._lock_for_update()
+        self._check_assignee_manager()
 
         if self.status != 'on_hold':
             raise ValidationError(
@@ -541,13 +657,107 @@ class SupportTicket(models.Model):
                 'sla_resolution_deadline'
             ] = self._as_odoo_datetime(new_deadline)
 
-        self.write(values)
+        self.sudo().write(values)
 
         return True
     def get_sla_metrics(
         self,
         sla_type='resolution'
     ):
+        return self._compute_sla_metrics(sla_type)
+
+    def _sla_work_hours_function(self, calendar, range_start, range_end):
+        """Return ``hours(start, end)`` equal to
+        ``calendar.get_work_hours_count(start, end, compute_leaves=True)``
+        but backed by ONE ``_work_intervals_batch`` call for the whole range
+        (the very intervals get_work_hours_count sums), avoiding N+1 queries
+        when SLA metrics are computed for many tickets.
+        """
+        def aware(value):
+            # _as_utc() relies on fields.Datetime.to_datetime(), which rejects
+            # tz-aware values in 17.0; metrics pass already-aware datetimes.
+            if getattr(value, 'tzinfo', None):
+                return value.astimezone(UTC)
+            return self._as_utc(value)
+
+        range_start = aware(range_start)
+        range_end = aware(range_end)
+        intervals = [
+            (begin, stop)
+            for begin, stop, _meta in calendar._work_intervals_batch(
+                range_start, range_end
+            )[False]
+        ]
+        starts = [begin for begin, _stop in intervals]
+
+        def hours(start, end):
+            start = aware(start)
+            end = aware(end)
+
+            if end <= start:
+                return 0.0
+
+            if start < range_start or end > range_end:
+                return calendar.get_work_hours_count(
+                    start, end, compute_leaves=True
+                )
+
+            total = 0.0
+            index = max(bisect.bisect_right(starts, start) - 1, 0)
+
+            for begin, stop in intervals[index:]:
+                if begin >= end:
+                    break
+                overlap = (min(stop, end) - max(begin, start)).total_seconds()
+                if overlap > 0:
+                    total += overlap / 3600
+
+            return total
+
+        return hours
+
+    def _get_sla_work_hours_map(self):
+        """{calendar: hours_fn} covering every date the tickets may need."""
+        now = self._as_utc(fields.Datetime.now())
+        by_calendar = defaultdict(list)
+
+        for ticket in self:
+            calendar = ticket._get_sla_calendar()
+            if not calendar:
+                continue
+            for value in (
+                ticket.submitted_at, ticket.first_response_at,
+                ticket.solution_at, ticket.sla_pause_started_at,
+                ticket.sla_response_deadline, ticket.sla_resolution_deadline,
+            ):
+                if value:
+                    by_calendar[calendar].append(self._as_utc(value))
+
+        return {
+            calendar: self._sla_work_hours_function(
+                calendar,
+                min(values + [now]) - timedelta(days=1),
+                max(values + [now]) + timedelta(days=1),
+            )
+            for calendar, values in by_calendar.items()
+        }
+
+    def _get_sla_metrics_batch(self):
+        """{ticket_id: {'response': {...}, 'resolution': {...}}} - same values
+        as get_sla_metrics(), with one interval fetch per calendar."""
+        hours_map = self._get_sla_work_hours_map()
+        return {
+            ticket.id: {
+                sla_type: ticket._compute_sla_metrics(
+                    sla_type,
+                    work_hours=hours_map.get(ticket._get_sla_calendar()),
+                )
+                for sla_type in ('response', 'resolution')
+            }
+            for ticket in self
+        }
+
+    def _compute_sla_metrics(self, sla_type='resolution', work_hours=None):
         self.ensure_one()
 
         if sla_type not in {'response', 'resolution'}:
@@ -571,8 +781,15 @@ class SupportTicket(models.Model):
             )
             deadline = self.sla_resolution_deadline
             status = self.sla_resolution_status
-            end_at = (
+            # بعد إعادة الفتح يبقى solution_at للحل السابق؛ لا يوقف العدّاد
+            # إلا إذا كان الطلب فعلًا بانتظار التأكيد أو مغلقًا (FR-SYS-12/15).
+            resolution_end = (
                 self.solution_at
+                if self.status in {'waiting_confirmation', 'closed'}
+                else False
+            )
+            end_at = (
+                resolution_end
                 or (
                     self.sla_pause_started_at
                     if self.status == 'on_hold'
@@ -585,7 +802,7 @@ class SupportTicket(models.Model):
             and not (
                 self.first_response_at
                 if sla_type == 'response'
-                else self.solution_at
+                else resolution_end
             )
         ):
             end_at = deadline
@@ -619,11 +836,13 @@ class SupportTicket(models.Model):
         end_at = self._as_utc(end_at)
         deadline = self._as_utc(deadline)
 
-        used_hours = calendar.get_work_hours_count(
-            start_at,
-            end_at,
-            compute_leaves=True,
-        )
+        if work_hours is None:
+            def work_hours(begin, stop):
+                return calendar.get_work_hours_count(
+                    begin, stop, compute_leaves=True
+                )
+
+        used_hours = work_hours(start_at, end_at)
 
         if sla_type == 'resolution':
             used_hours -= self.sla_paused_hours or 0.0
@@ -635,11 +854,7 @@ class SupportTicket(models.Model):
             0.0
             if is_final
             else max(
-                calendar.get_work_hours_count(
-                    end_at,
-                    deadline,
-                    compute_leaves=True,
-                ),
+                work_hours(end_at, deadline),
                 0.0,
             )
         )
@@ -651,11 +866,7 @@ class SupportTicket(models.Model):
         is_working_time = (
             not is_final
             and self.status != 'on_hold'
-            and calendar.get_work_hours_count(
-                end_at,
-                check_end,
-                compute_leaves=True,
-            ) > 0
+            and work_hours(end_at, check_end) > 0
         )
 
         percent = (
@@ -674,6 +885,37 @@ class SupportTicket(models.Model):
             'is_working_time': is_working_time,
         }
     
+    def _support_notify(self, subject, body, partner_ids, message_type='notification'):
+        """DN-03: in-platform notification only (bell / Discuss inbox).
+
+        Same arguments as the message_post() calls it replaces, but the
+        notification is created with notification_type='inbox' for every
+        recipient, so no mail.mail / e-mail is generated whatever the user's
+        notification preference is. Called after the role/ownership checks.
+        """
+        self.ensure_one()
+        partners = self.env['res.partner'].sudo().browse(
+            partner_ids.ids if hasattr(partner_ids, 'ids') else list(partner_ids or [])
+        ).exists()
+        message = self.env['mail.message'].sudo().create({
+            'model': self._name,
+            'res_id': self.id,
+            'message_type': message_type,
+            'subtype_id': self.env.ref('mail.mt_note').id,
+            'author_id': self.env.user.partner_id.id,
+            'subject': subject,
+            'body': plaintext2html(body or ''),
+            'partner_ids': [(6, 0, partners.ids)],
+        })
+        if partners:
+            self.env['mail.notification'].sudo().create([{
+                'mail_message_id': message.id,
+                'res_partner_id': partner.id,
+                'notification_type': 'inbox',
+                'is_read': False,
+            } for partner in partners])
+        return message
+
     def _get_sla_alert_level(self, percent):
         if percent >= 100:
             return 100
@@ -774,7 +1016,7 @@ class SupportTicket(models.Model):
                     f'تم تجاوز SLA الحل '
                     f'للطلب {self.ticket_number}.'
                 )
-        message = self.message_post(
+        message = self._support_notify(
             subject=subject,
             body=body,
             partner_ids=partners.ids,
@@ -806,7 +1048,8 @@ class SupportTicket(models.Model):
         return True
     @api.model
     def _cron_update_sla_statuses(self):
-
+        # المهمة تكتب حقول SLA المحمية؛ تعمل دائمًا بصلاحية النظام.
+        self = self.sudo()
         now = fields.Datetime.now()
 
         tickets = self.search([
@@ -1099,11 +1342,22 @@ class SupportTicket(models.Model):
     )
     def _check_inquiry_priority(self):
 
+        inquiry = self.env.ref(
+            'website.support_category_consultation',
+            raise_if_not_found=False,
+        )
+
         for ticket in self:
+
+            is_inquiry = (
+                ticket.category_id == inquiry
+                if inquiry
+                else ticket.category_id.name == 'استفسار'
+            )
 
             if (
                 ticket.category_id
-                and ticket.category_id.name == 'استفسار'
+                and is_inquiry
                 and ticket.priority == 'high'
             ):
 

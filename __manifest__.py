@@ -19,6 +19,8 @@
         'mail',
         'google_recaptcha',
         'utm',
+        # support.ticket.department_id و_get_current_employee يعتمدان على hr
+        'hr',
     ],
     'external_dependencies': {
         'python': ['geoip2'],
@@ -39,6 +41,7 @@
         'data/support_data.xml',
         'data/support_category_data.xml',
         'data/support_sla_policy_data.xml',
+        'data/support_cron_data.xml',
         'views/website_templates.xml',
         'views/snippets/snippets.xml',
         'views/snippets/s_title.xml',
